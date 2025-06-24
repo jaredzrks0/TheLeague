@@ -1,0 +1,69 @@
+# Data
+data
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environment
+.env/
+.venv/
+env/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VS Code settings
+.vscode/
+
+# Mac system files
+.DS_Store
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Icon?
+Desktop.ini
+
+# Pytest cache
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# Data folder: ignore all but allow keeping tracked items
+data/*
+!data/.gitkeep
+!data/README.md
+!data/sample.csv
+
+# Ignore sensitive or large data types
+*.pkl
+*.h5
+*.zip
+*.tar.gz
+*.csv
+*.tsv
+
+# You can explicitly allow some useful files
+!data/processed/cleaned_sample.csv
