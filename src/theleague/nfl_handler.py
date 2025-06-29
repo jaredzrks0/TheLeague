@@ -373,9 +373,7 @@ class NFLDailyStatsCollector:
         for year in self.season_years:
             df = self.full_boxscore[self.full_boxscore.season == year]
             downloader = CloudHelper()
-            download = downloader.download_from_cloud(
-                f"gs://nfl-data-collection/boxscores_{year}"
-            )
+            download = downloader.download_from_cloud(f'nfl-data-collection/boxscores_{year}.parquet')
 
             # If possible, drop duplicates from the download for a second pull on the same day and remove any
             # Unnamed columns from the upload/download process
@@ -389,14 +387,5 @@ class NFLDailyStatsCollector:
             )
 
             uploader = CloudHelper(self.boxscores_df)
-            uploader.upload_to_cloud_from_local(
-                bucket_name="nfl-data-collection", file_name=f"boxscores_{year}"
-            )
+            uploader.upload_to_cloud(bucket_name='nfl-data-collection', file_name=f'boxscores_{year}.parquet')
 
-
-
-if __name__ == "__main__":
-    collector = NFLDailyStatsCollector(start_date="2024-09-11", end_date="2024-09-13")
-    collector.run()
-
-    print("X")
