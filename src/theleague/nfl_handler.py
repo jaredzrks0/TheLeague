@@ -52,7 +52,7 @@ class NFLDailyStatsCollector:
 
         for date in self.dates:
             print(f"Processing {date.date()}...")
-            str_date = date.strftime("%Y-%m-%d")
+            self.str_date = date.strftime("%Y-%m-%d")
 
             # Collect all the url suffixes for the games on the given day
             boxscore_urls = self._get_boxscore_urls_for_date(date)
@@ -60,67 +60,64 @@ class NFLDailyStatsCollector:
 
             # Grab and clean all the individual box scores
             for suffix in boxscore_urls:
-                url = "https://www.pro-football-reference.com" + suffix
-                print(f"  Scraping {url}")
+                self.url = "https://www.pro-football-reference.com" + suffix
+                print(f"  Scraping {self.url}")
                 try:
-                    boxscore_data = self._fetch_offensive_boxscore(url)
-                    boxscore_data.columns = OFFENSIVE_COLUMNS_LIST
-                    boxscore_data["date"] = str_date
+                    boxscore_data = self._fetch_offensive_boxscore(self.url)
                     all_cleaned_offensive_dfs.append(boxscore_data)
                     fg_data = self._fetch_fg_boxscore()
-                    fg_data["date"] = str_date
                     all_cleaned_fg_dfs.append(fg_data)
                     ### Get Commented tables ###
-                    self._get_commented_tables(url)
+                    self._get_commented_tables(self.url)
                     time.sleep(6.1)
 
                     # Basic Defense
                     basic_defense = self._fetch_commented_table(
                         "player_defense", "Player", PLAYER_DEFENSE_RENAMING_DICT
                     )
-                    basic_defense["date"] = str_date
+                    basic_defense["date"] = self.str_date
                     all_cleaned_basic_defense_dfs.append(basic_defense)
 
                     # Punt and kick returns
                     punt_kick_returns = self._fetch_commented_table(
                         "returns", "Player", PUNT_KICK_RETURNS_RENAMING_DICT
                     )
-                    punt_kick_returns["date"] = str_date
+                    punt_kick_returns["date"] = self.str_date
                     all_cleaned_punt_kick_returns_dfs.append(punt_kick_returns)
 
                     # Punts and kicks
                     punts_kicks = self._fetch_commented_table(
                         "kicking", "Player", PUNT_KICK_RENAMING_DICT
                     )
-                    punts_kicks["date"] = str_date
+                    punts_kicks["date"] = self.str_date
                     all_cleaned_punt_kick_dfs.append(punts_kicks)
 
                     # Advanced passing
                     passing_advanced = self._fetch_commented_table(
                         "passing_advanced", "Player", PASSING_ADVANCED_RENAMING_DICT
                     )
-                    passing_advanced["date"] = str_date
+                    passing_advanced["date"] = self.str_date
                     all_cleaned_passing_advanced_dfs.append(passing_advanced)
 
                     # Advanced receiving
                     receiving_advanced = self._fetch_commented_table(
                         "receiving_advanced", "Player", RECEIVING_ADVANCED_RENAMING_DICT
                     )
-                    receiving_advanced["date"] = str_date
+                    receiving_advanced["date"] = self.str_date
                     all_cleaned_receiving_advanced_dfs.append(receiving_advanced)
 
                     # Advanced rushing
                     rushing_advanced = self._fetch_commented_table(
                         "rushing_advanced", "Player", RUSHING_ADVANCED_RENAMING_DICT
                     )
-                    rushing_advanced["date"] = str_date
+                    rushing_advanced["date"] = self.str_date
                     all_cleaned_rushing_advanced_dfs.append(rushing_advanced)
 
                     # Advanced Defense
                     defense_advanced = self._fetch_commented_table(
                         "defense_advanced", "Player", DEFENSE_ADVANCED_RENAMING_DICT
                     )
-                    defense_advanced["date"] = str_date
+                    defense_advanced["date"] = self.str_date
                     all_cleaned_defense_advanced_dfs.append(defense_advanced)
 
                     # Snap Counts
@@ -128,13 +125,13 @@ class NFLDailyStatsCollector:
                         "home_snap_counts", "Player", SNAP_COUNT_RENAMING_DICT
                     )
                     home_snap_counts["team"] = self.home_team
-                    home_snap_counts["date"] = str_date
+                    home_snap_counts["date"] = self.str_date
 
                     away_snap_counts = self._fetch_commented_table(
                         "vis_snap_counts", "Player", SNAP_COUNT_RENAMING_DICT
                     )
                     away_snap_counts["team"] = self.away_team
-                    away_snap_counts["date"] = str_date
+                    away_snap_counts["date"] = self.str_date
 
                     all_cleaned_snap_counts.append(home_snap_counts)
                     all_cleaned_snap_counts.append(away_snap_counts)
@@ -188,17 +185,39 @@ class NFLDailyStatsCollector:
             snap_count_boxscores,
         ]
 
-        self.full_boxscore = reduce(
+        # Extract source_url columns and drop from original
+        source_urls = [df[["player_id", "player", "team", "date", "source_url"]] for df in dfs_to_merge]
+        dfs_wo_source_url = [df.drop(columns=["source_url"]) for df in dfs_to_merge]
+
+        # Merge the main DataFrames (without source_url)
+        merged = reduce(
             lambda left, right: pd.merge(
                 left, right, on=["player_id", "player", "team", "date"], how="outer"
             ),
-            dfs_to_merge,
+            dfs_wo_source_url,
         )
+
+        # Concatenate all source_urls into one DataFrame
+        all_source_urls = pd.concat(source_urls)
+
+        # Merge back into the full merged DataFrame
+        self.full_boxscore = pd.merge(
+            merged,
+            all_source_urls,
+            on=["player_id", "player", "team", "date"],
+            how="left"
+        )
+
+        # The outer merge creates some duplicate columns for kickers because their IDs apperar in both 
+        # The kicking agg table and the punts_kicks table. Thus we drop duplicates
+        self.full_boxscore = self.full_boxscore.drop_duplicates()
 
         # After merging, add in columns for home and away team with self.home team and self.away_team. Also add season
         self.full_boxscore["season"] = date.year if date.month > 7 else date.year - 1
 
-        x = 1
+        # Save the cleaned data to cloud if requested
+        if self.gcloud_save:
+            self._save_to_gcloud()
 
     def _get_boxscore_urls_for_date(self, date):
         # Ensure the given date is in a compatable date format and grab the year
@@ -262,12 +281,21 @@ class NFLDailyStatsCollector:
         main_table = main_table.map(lambda x: x[0] if isinstance(x, tuple) else x)
         main_table = main_table.dropna(subset="player_id")
 
+        # Update the column names
+        main_table.columns = OFFENSIVE_COLUMNS_LIST
+
+        # Add the date
+        main_table["date"] = self.str_date
+
         # Determine the home and away team
         self.home_team = main_table.Tm.unique()[1]
         self.away_team = main_table.Tm.unique()[0]
 
         main_table["home_team"] = self.home_team
         main_table["away_team"] = self.away_team
+
+        # Add the source URL
+        main_table['source_url'] = self.url
 
         return main_table
 
@@ -306,6 +334,12 @@ class NFLDailyStatsCollector:
             columns={"count": "num_fg_made", "sum": "total_made_fg_distance"}
         )
 
+        # Add the date as a column
+        fg_agg["date"] = self.str_date
+
+        # Add the source URL
+        fg_agg['source_url'] = self.url
+
         return fg_agg
 
     def _fetch_commented_table(
@@ -330,11 +364,39 @@ class NFLDailyStatsCollector:
 
         table = table.dropna(subset=["player_id"]).rename(columns=renaming_dict)
 
+        # Add the source URL
+        table['source_url'] = self.url
+
         return table
+    
+    def _save_to_gcloud(self):
+        for year in self.season_years:
+            df = self.full_boxscore[self.full_boxscore.season == year]
+            downloader = CloudHelper()
+            download = downloader.download_from_cloud(
+                f"gs://nfl-data-collection/boxscores_{year}"
+            )
+
+            # If possible, drop duplicates from the download for a second pull on the same day and remove any
+            # Unnamed columns from the upload/download process
+            if isinstance(download, pd.DataFrame) and not download.empty:
+                download = download[
+                    [col for col in download.columns if "Unnamed:" not in col]
+                ]
+
+            self.boxscores_df = pd.concat([download, df]).drop_duplicates(
+                subset=["player_id", "source_url"]
+            )
+
+            uploader = CloudHelper(self.boxscores_df)
+            uploader.upload_to_cloud_from_local(
+                bucket_name="nfl-data-collection", file_name=f"boxscores_{year}"
+            )
+
 
 
 if __name__ == "__main__":
-    collector = NFLDailyStatsCollector(start_date="2024-09-08", end_date="2024-09-14")
+    collector = NFLDailyStatsCollector(start_date="2024-09-11", end_date="2024-09-13")
     collector.run()
 
     print("X")
