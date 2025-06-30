@@ -8,7 +8,7 @@ from datetime import datetime as dt
 from multimodal_communication import CloudHelper
 from functools import reduce
 import warnings
-from theleague.constants import (
+from theleague.constants.nfl_constants import (
     OFFENSIVE_COLUMNS_LIST,
     OFFENSIVE_RENAMING_DICT,
     PLAYER_DEFENSE_RENAMING_DICT,
@@ -55,12 +55,13 @@ class NFLDailyStatsCollector:
             self.str_date = date.strftime("%Y-%m-%d")
 
             # Collect all the url suffixes for the games on the given day
-            boxscore_urls = self._get_boxscore_urls_for_date(date)
+            boxscore_urls, weeks = self._get_boxscore_urls_for_date(date)
             time.sleep(6.1)
 
             # Grab and clean all the individual box scores
-            for suffix in boxscore_urls:
+            for suffix, week in zip(boxscore_urls, weeks):
                 self.url = "https://www.pro-football-reference.com" + suffix
+                self.week = week
                 print(f"  Scraping {self.url}")
                 try:
                     boxscore_data = self._fetch_offensive_boxscore(self.url)
@@ -76,6 +77,7 @@ class NFLDailyStatsCollector:
                         "player_defense", "Player", PLAYER_DEFENSE_RENAMING_DICT
                     )
                     basic_defense["date"] = self.str_date
+                    basic_defense["week"] = self.week
                     all_cleaned_basic_defense_dfs.append(basic_defense)
 
                     # Punt and kick returns
@@ -83,6 +85,7 @@ class NFLDailyStatsCollector:
                         "returns", "Player", PUNT_KICK_RETURNS_RENAMING_DICT
                     )
                     punt_kick_returns["date"] = self.str_date
+                    punt_kick_returns["week"] = self.week
                     all_cleaned_punt_kick_returns_dfs.append(punt_kick_returns)
 
                     # Punts and kicks
@@ -90,6 +93,7 @@ class NFLDailyStatsCollector:
                         "kicking", "Player", PUNT_KICK_RENAMING_DICT
                     )
                     punts_kicks["date"] = self.str_date
+                    punts_kicks["week"] = self.week
                     all_cleaned_punt_kick_dfs.append(punts_kicks)
 
                     # Advanced passing
@@ -97,6 +101,7 @@ class NFLDailyStatsCollector:
                         "passing_advanced", "Player", PASSING_ADVANCED_RENAMING_DICT
                     )
                     passing_advanced["date"] = self.str_date
+                    passing_advanced["week"] = self.week
                     all_cleaned_passing_advanced_dfs.append(passing_advanced)
 
                     # Advanced receiving
@@ -104,6 +109,7 @@ class NFLDailyStatsCollector:
                         "receiving_advanced", "Player", RECEIVING_ADVANCED_RENAMING_DICT
                     )
                     receiving_advanced["date"] = self.str_date
+                    receiving_advanced["week"] = self.week
                     all_cleaned_receiving_advanced_dfs.append(receiving_advanced)
 
                     # Advanced rushing
@@ -111,6 +117,7 @@ class NFLDailyStatsCollector:
                         "rushing_advanced", "Player", RUSHING_ADVANCED_RENAMING_DICT
                     )
                     rushing_advanced["date"] = self.str_date
+                    rushing_advanced["week"] = self.week
                     all_cleaned_rushing_advanced_dfs.append(rushing_advanced)
 
                     # Advanced Defense
@@ -118,6 +125,7 @@ class NFLDailyStatsCollector:
                         "defense_advanced", "Player", DEFENSE_ADVANCED_RENAMING_DICT
                     )
                     defense_advanced["date"] = self.str_date
+                    defense_advanced["week"] = self.week
                     all_cleaned_defense_advanced_dfs.append(defense_advanced)
 
                     # Snap Counts
@@ -126,42 +134,63 @@ class NFLDailyStatsCollector:
                     )
                     home_snap_counts["team"] = self.home_team
                     home_snap_counts["date"] = self.str_date
+                    home_snap_counts["week"] = self.week
 
                     away_snap_counts = self._fetch_commented_table(
                         "vis_snap_counts", "Player", SNAP_COUNT_RENAMING_DICT
                     )
                     away_snap_counts["team"] = self.away_team
                     away_snap_counts["date"] = self.str_date
+                    away_snap_counts["week"] = self.week
 
                     all_cleaned_snap_counts.append(home_snap_counts)
                     all_cleaned_snap_counts.append(away_snap_counts)
 
                     time.sleep(6.1)
                 except Exception as e:
-                    print(f"  Failed to scrape {url}: {e}")
+                    print(f"  Failed to scrape {self.url}: {e}")
                 time.sleep(6.1)  # Wait between each game to respect rate limits
 
-        offensive_boxscores = pd.concat(all_cleaned_offensive_dfs).rename(
-            columns=OFFENSIVE_RENAMING_DICT
-        )
+        try:
+            offensive_boxscores = pd.concat(all_cleaned_offensive_dfs).rename(
+                columns=OFFENSIVE_RENAMING_DICT
+            )
+        except ValueError:
+            print('No NFL games played within the requested date range.')
+            return None
+
         fg_boxscores = pd.concat(all_cleaned_fg_dfs).rename(
             columns={"kicker": "player"}
         )
         basic_defense_boxscores = pd.concat(all_cleaned_basic_defense_dfs)
         punt_kick_return_boxscores = pd.concat(all_cleaned_punt_kick_returns_dfs)
         punts_kicks_boxscores = pd.concat(all_cleaned_punt_kick_dfs)
-        passing_advanced_boxscores = pd.concat(all_cleaned_passing_advanced_dfs).drop(
+        
+        passing_advanced_boxscores = pd.concat(all_cleaned_passing_advanced_dfs)
+        if isinstance(passing_advanced_boxscores,  pd.DataFrame) and not passing_advanced_boxscores.empty:
+            passing_advanced_boxscores = passing_advanced_boxscores.drop(
             columns=["Cmp", "Att", "Yds"]
         )
+            
         receiving_advanced_boxscores = pd.concat(
             all_cleaned_receiving_advanced_dfs
-        ).drop(columns=["Tgt", "Rec", "Yds", "TD"])
-        rushing_advanced_boxscores = pd.concat(all_cleaned_rushing_advanced_dfs).drop(
+        )
+        if isinstance(receiving_advanced_boxscores, pd.DataFrame) and not receiving_advanced_boxscores.empty:
+            receiving_advanced_boxscores = receiving_advanced_boxscores.drop(columns=["Tgt", "Rec", "Yds", "TD"])
+
+        rushing_advanced_boxscores = pd.concat(all_cleaned_rushing_advanced_dfs)
+        if isinstance(rushing_advanced_boxscores, pd.DataFrame) and not rushing_advanced_boxscores.empty:
+            rushing_advanced_boxscores = rushing_advanced_boxscores.drop(
             columns=["Att", "Yds", "TD"]
         )
-        defense_adanced_boxscores = pd.concat(all_cleaned_defense_advanced_dfs).drop(
+
+
+        defense_adanced_boxscores = pd.concat(all_cleaned_defense_advanced_dfs)
+        if isinstance(defense_adanced_boxscores, pd.DataFrame) and not defense_adanced_boxscores.empty:
+            defense_adanced_boxscores = defense_adanced_boxscores.drop(
             columns=["Int", "Yds", "TD", "Sk"]
         )
+
         snap_count_boxscores = pd.concat(all_cleaned_snap_counts)
 
         fg_boxscores = pd.merge(
@@ -186,13 +215,13 @@ class NFLDailyStatsCollector:
         ]
 
         # Extract source_url columns and drop from original
-        source_urls = [df[["player_id", "player", "team", "date", "source_url"]] for df in dfs_to_merge]
-        dfs_wo_source_url = [df.drop(columns=["source_url"]) for df in dfs_to_merge]
+        source_urls = [df[["player_id", "player", "team", "date", "source_url"]] for df in dfs_to_merge if not df.empty]
+        dfs_wo_source_url = [df.drop(columns=["source_url"]) for df in dfs_to_merge if not df.empty]
 
         # Merge the main DataFrames (without source_url)
         merged = reduce(
             lambda left, right: pd.merge(
-                left, right, on=["player_id", "player", "team", "date"], how="outer"
+                left, right, on=["player_id", "player", "team", "date", 'week'], how="outer"
             ),
             dfs_wo_source_url,
         )
@@ -222,9 +251,9 @@ class NFLDailyStatsCollector:
     def _get_boxscore_urls_for_date(self, date):
         # Ensure the given date is in a compatable date format and grab the year
         date = pd.to_datetime(date) if isinstance(date, str) else date
-        year = date.year
+        season = date.year if date.month > 8 else date.year - 1
 
-        games_url = f"https://www.pro-football-reference.com/years/{year}/games.htm"
+        games_url = f"https://www.pro-football-reference.com/years/{season}/games.htm"
         games_table = pd.read_html(games_url, extract_links="body")[0]
 
         # Compile the dates and suffixes from the full season for later date filtering
@@ -232,13 +261,18 @@ class NFLDailyStatsCollector:
         games_table["suffixes"] = games_table["Unnamed: 7"].apply(lambda x: x[1])
 
         # filter down to just the game suffixes that fall on the date
-        suffixes = games_table[["dates", "suffixes"]].dropna()
+        suffixes = games_table[["dates", "suffixes", 'Week']].dropna()
 
-        relevant_suffixes = suffixes[
+        relevant_games = suffixes[
             suffixes.dates == date.strftime("%Y-%m-%d")
-        ].suffixes
+        ]
 
-        return relevant_suffixes
+        relevant_suffixes = relevant_games.suffixes
+
+        # Get the weeks
+        relevant_weeks = [week_tuple[0] for week_tuple in relevant_games.Week]
+
+        return relevant_suffixes, relevant_weeks
 
     def _get_commented_tables(self, url: str) -> None:
         scraped_html = requests.get(url)
@@ -297,11 +331,13 @@ class NFLDailyStatsCollector:
         # Add the source URL
         main_table['source_url'] = self.url
 
+        # Add the week
+        main_table['week'] = self.week
+
         return main_table
 
     def _fetch_fg_boxscore(self):
         fg_boxscore = self.all_tables[1]
-        # fg_boxscore.columns = fg_boxscore.columns.droplevel(0)
 
         # Break apart the player ids from the embedded player page links
         fg_boxscore = self._extract_ids(fg_boxscore, "Detail")
@@ -336,6 +372,9 @@ class NFLDailyStatsCollector:
 
         # Add the date as a column
         fg_agg["date"] = self.str_date
+
+        # Add the week
+        fg_agg["week"] = self.week
 
         # Add the source URL
         fg_agg['source_url'] = self.url

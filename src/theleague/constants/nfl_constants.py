@@ -24,7 +24,7 @@ OFFENSIVE_COLUMNS_LIST = [
     "player_id",
 ]
 
-OFFENSIVE_RENAMING_DICT = rename_dict = {
+OFFENSIVE_RENAMING_DICT = {
     "player": "player",
     "Tm": "team",
     "Cmp": "pass_cmp",
