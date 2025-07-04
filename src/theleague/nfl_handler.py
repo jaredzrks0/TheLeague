@@ -24,7 +24,7 @@ from theleague.constants.nfl_constants import (
 
 class NFLDailyStatsCollector:
     def __init__(
-        self, start_date, end_date, gcloud_save: bool = True, local_save: bool = False
+        self, start_date, end_date, gcloud_save: bool = True, local_save: bool = False, caching: bool = False
     ):
         self.dates = pd.date_range(start_date, end_date)
         season_years = pd.Series(self.dates).apply(
@@ -51,11 +51,15 @@ class NFLDailyStatsCollector:
         all_cleaned_snap_counts = []
 
         for date in self.dates:
+            # Don't scrape dates we are 100% certain will not have NFL games
+            if date.month in [3, 4, 5, 6, 7, 8]:
+                continue
+
             print(f"Processing {date.date()}...")
             self.str_date = date.strftime("%Y-%m-%d")
 
             # Collect all the url suffixes for the games on the given day
-            boxscore_urls, weeks = self._get_boxscore_urls_for_date(date)
+            boxscore_urls, weeks = self._get_boxscore_urls_for_date(date) 
             time.sleep(6.1)
 
             # Grab and clean all the individual box scores
@@ -408,23 +412,34 @@ class NFLDailyStatsCollector:
 
         return table
     
-    def _save_to_gcloud(self):
-        for year in self.season_years:
-            df = self.full_boxscore[self.full_boxscore.season == year]
-            downloader = CloudHelper()
-            download = downloader.download_from_cloud(f'nfl-data-collection/boxscores_{year}.parquet')
+    def _save_to_gcloud(self, df: pd.DataFrame | None = None):
 
-            # If possible, drop duplicates from the download for a second pull on the same day and remove any
-            # Unnamed columns from the upload/download process
-            if isinstance(download, pd.DataFrame) and not download.empty:
-                download = download[
-                    [col for col in download.columns if "Unnamed:" not in col]
-                ]
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            for year in df.season:
+                upload_df = df[df.season == year]
+        else:
+            for year in self.season_years:
+                upload_df = df = self.full_boxscore[self.full_boxscore.season == year]
 
-            self.boxscores_df = pd.concat([download, df]).drop_duplicates(
-                subset=["player_id", "source_url"]
-            )
+        self._gcloud_upload_helper(df=upload_df, year=year)
+            
 
-            uploader = CloudHelper(self.boxscores_df)
-            uploader.upload_to_cloud(bucket_name='nfl-data-collection', file_name=f'boxscores_{year}.parquet')
+    def _gcloud_upload_helper(self, df, year):
+        downloader = CloudHelper()
+        download = downloader.download_from_cloud(f'nfl-data-collection/boxscores_{year}.parquet')
+
+        # If possible, drop duplicates from the download for a second pull on the same day and remove any
+        # Unnamed columns from the upload/download process
+        if isinstance(download, pd.DataFrame) and not download.empty:
+            download = download[
+                [col for col in download.columns if "Unnamed:" not in col]
+            ]
+
+        self.boxscores_df = pd.concat([download, df]).drop_duplicates(
+            subset=["player_id", "source_url"]
+        )
+
+        uploader = CloudHelper(self.boxscores_df)
+        uploader.upload_to_cloud(bucket_name='nfl-data-collection', file_name=f'boxscores_{year}.parquet')
+
 
