@@ -25,8 +25,14 @@ from theleague.constants.nfl_constants import (
 
 class NFLDailyStatsCollector:
     def __init__(
-        self, start_date, end_date, gcloud_save: bool = True, local_save: bool = False, 
-        caching: bool = False, cache_frequency: int = 5, log_level: str = "INFO"
+        self,
+        start_date,
+        end_date,
+        gcloud_save: bool = True,
+        local_save: bool = False,
+        caching: bool = False,
+        cache_frequency: int = 5,
+        log_level: str = "INFO",
     ):
         self.dates = pd.date_range(start_date, end_date)
         season_years = pd.Series(self.dates).apply(
@@ -38,15 +44,15 @@ class NFLDailyStatsCollector:
         self.caching = caching
         self.cache_frequency = cache_frequency
         self.games_processed = 0
-        
+
         # Set up logging
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(getattr(logging, log_level.upper()))
-        
+
         # Create console handler if it doesn't exist
         if not self.logger.handlers:
             # Logging formatter
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
             # Console handler
             console_handler = logging.StreamHandler()
@@ -61,14 +67,16 @@ class NFLDailyStatsCollector:
         assert len(self.dates) > 0, (
             f"start_date: {start_date} must be less than end_date: {end_date}"
         )
-        
+
         self.logger.info(f"Initialized NFL Stats Collector for {len(self.dates)} dates")
         self.logger.info(f"Season years: {sorted(self.season_years)}")
-        self.logger.info(f"Caching enabled: {self.caching}, Cache frequency: {self.cache_frequency}")
+        self.logger.info(
+            f"Caching enabled: {self.caching}, Cache frequency: {self.cache_frequency}"
+        )
 
     def run(self):
         self.logger.info("Starting NFL stats collection")
-        
+
         all_cleaned_offensive_dfs = []
         all_cleaned_fg_dfs = []
         all_cleaned_basic_defense_dfs = []
@@ -88,7 +96,7 @@ class NFLDailyStatsCollector:
 
             self.logger.info(f"Processing {date.date()}...")
             self.str_date = date.strftime("%Y-%m-%d")
-            
+
             # Collect all the url suffixes for the games on the given day
             try:
                 boxscore_urls, weeks = self._get_boxscore_urls_for_date(date)
@@ -97,7 +105,7 @@ class NFLDailyStatsCollector:
             except Exception as e:
                 self.logger.error(f"Failed to get boxscore URLs for {date.date()}: {e}")
                 continue
-                
+
             time.sleep(6.1)
 
             # Grab and clean all the individual box scores
@@ -105,15 +113,15 @@ class NFLDailyStatsCollector:
                 self.url = "https://www.pro-football-reference.com" + suffix
                 self.week = week
                 self.logger.info(f"Scraping {self.url}")
-                
+
                 try:
                     boxscore_data = self._fetch_offensive_boxscore(self.url)
                     all_cleaned_offensive_dfs.append(boxscore_data)
                     fg_data = self._fetch_fg_boxscore()
                     all_cleaned_fg_dfs.append(fg_data)
-                    
+
                     ### Get Commented tables ###
-                    self._get_commented_tables(self.url)
+                    self._fetch_commented_tables(self.url)
                     time.sleep(6.1)
 
                     # Basic Defense
@@ -191,17 +199,32 @@ class NFLDailyStatsCollector:
                     all_cleaned_snap_counts.append(away_snap_counts)
 
                     self.games_processed += 1
-                    self.logger.info(f"Successfully processed game {self.games_processed}/{total_games}")
-                    
+                    self.logger.info(
+                        f"Successfully processed game {self.games_processed}/{total_games}"
+                    )
+
                     # Intermittent caching - upload current progress
-                    if self.caching and self.gcloud_save and self.games_processed % self.cache_frequency == 0:
-                        self.logger.info(f"Caching progress after {self.games_processed} games...")
+                    if (
+                        self.caching
+                        and self.gcloud_save
+                        and self.games_processed % self.cache_frequency == 0
+                    ):
+                        self.logger.info(
+                            f"Caching progress after {self.games_processed} games..."
+                        )
                         self._process_and_upload_data(
-                            all_cleaned_offensive_dfs, all_cleaned_fg_dfs, all_cleaned_basic_defense_dfs,
-                            all_cleaned_punt_kick_returns_dfs, all_cleaned_punt_kick_dfs,
-                            all_cleaned_passing_advanced_dfs, all_cleaned_receiving_advanced_dfs,
-                            all_cleaned_rushing_advanced_dfs, all_cleaned_defense_advanced_dfs,
-                            all_cleaned_snap_counts, date, is_cache=True
+                            all_cleaned_offensive_dfs,
+                            all_cleaned_fg_dfs,
+                            all_cleaned_basic_defense_dfs,
+                            all_cleaned_punt_kick_returns_dfs,
+                            all_cleaned_punt_kick_dfs,
+                            all_cleaned_passing_advanced_dfs,
+                            all_cleaned_receiving_advanced_dfs,
+                            all_cleaned_rushing_advanced_dfs,
+                            all_cleaned_defense_advanced_dfs,
+                            all_cleaned_snap_counts,
+                            date,
+                            is_cache=True,
                         )
 
                     time.sleep(6.1)
@@ -212,60 +235,115 @@ class NFLDailyStatsCollector:
         # Final processing and upload
         self.logger.info("Processing final data and uploading to cloud...")
         self.full_boxscore = self._process_and_upload_data(
-            all_cleaned_offensive_dfs, all_cleaned_fg_dfs, all_cleaned_basic_defense_dfs,
-            all_cleaned_punt_kick_returns_dfs, all_cleaned_punt_kick_dfs,
-            all_cleaned_passing_advanced_dfs, all_cleaned_receiving_advanced_dfs,
-            all_cleaned_rushing_advanced_dfs, all_cleaned_defense_advanced_dfs,
-            all_cleaned_snap_counts, date, is_cache=False
+            all_cleaned_offensive_dfs,
+            all_cleaned_fg_dfs,
+            all_cleaned_basic_defense_dfs,
+            all_cleaned_punt_kick_returns_dfs,
+            all_cleaned_punt_kick_dfs,
+            all_cleaned_passing_advanced_dfs,
+            all_cleaned_receiving_advanced_dfs,
+            all_cleaned_rushing_advanced_dfs,
+            all_cleaned_defense_advanced_dfs,
+            all_cleaned_snap_counts,
+            date,
+            is_cache=False,
         )
-        
+
         self.logger.info(f"Successfully processed {self.games_processed} games")
         return self.full_boxscore
 
-    def _process_and_upload_data(self, offensive_dfs, fg_dfs, defense_dfs, punt_kick_return_dfs, 
-                                punt_kick_dfs, passing_adv_dfs, receiving_adv_dfs, rushing_adv_dfs, 
-                                defense_adv_dfs, snap_count_dfs, current_date, is_cache=False):
+    def _process_and_upload_data(
+        self,
+        offensive_dfs,
+        fg_dfs,
+        defense_dfs,
+        punt_kick_return_dfs,
+        punt_kick_dfs,
+        passing_adv_dfs,
+        receiving_adv_dfs,
+        rushing_adv_dfs,
+        defense_adv_dfs,
+        snap_count_dfs,
+        current_date,
+        is_cache=False,
+    ):
         """Process and optionally upload data to Google Cloud"""
         try:
             # Check if we have any data to process
             if not offensive_dfs:
                 self.logger.warning("No offensive data found to process")
                 return None if not is_cache else pd.DataFrame()
-                
+
             self.logger.info(f"Processing {len(offensive_dfs)} offensive records...")
-            
+
             # Concatenate and rename offensive data
-            offensive_boxscores = pd.concat(offensive_dfs).rename(columns=OFFENSIVE_RENAMING_DICT)
-            
+            offensive_boxscores = pd.concat(offensive_dfs).rename(
+                columns=OFFENSIVE_RENAMING_DICT
+            )
+
             # Process other data types
-            fg_boxscores = pd.concat(fg_dfs).rename(columns={"kicker": "player"}) if fg_dfs else pd.DataFrame()
-            basic_defense_boxscores = pd.concat(defense_dfs) if defense_dfs else pd.DataFrame()
-            punt_kick_return_boxscores = pd.concat(punt_kick_return_dfs) if punt_kick_return_dfs else pd.DataFrame()
-            punts_kicks_boxscores = pd.concat(punt_kick_dfs) if punt_kick_dfs else pd.DataFrame()
-            
+            fg_boxscores = (
+                pd.concat(fg_dfs).rename(columns={"kicker": "player"})
+                if fg_dfs
+                else pd.DataFrame()
+            )
+            basic_defense_boxscores = (
+                pd.concat(defense_dfs) if defense_dfs else pd.DataFrame()
+            )
+            punt_kick_return_boxscores = (
+                pd.concat(punt_kick_return_dfs)
+                if punt_kick_return_dfs
+                else pd.DataFrame()
+            )
+            punts_kicks_boxscores = (
+                pd.concat(punt_kick_dfs) if punt_kick_dfs else pd.DataFrame()
+            )
+
             # Process advanced stats with column dropping
-            passing_advanced_boxscores = pd.concat(passing_adv_dfs) if passing_adv_dfs else pd.DataFrame()
+            passing_advanced_boxscores = (
+                pd.concat(passing_adv_dfs) if passing_adv_dfs else pd.DataFrame()
+            )
             if not passing_advanced_boxscores.empty:
-                passing_advanced_boxscores = passing_advanced_boxscores.drop(columns=["Cmp", "Att", "Yds"], errors='ignore')
-                
-            receiving_advanced_boxscores = pd.concat(receiving_adv_dfs) if receiving_adv_dfs else pd.DataFrame()
+                passing_advanced_boxscores = passing_advanced_boxscores.drop(
+                    columns=["Cmp", "Att", "Yds"], errors="ignore"
+                )
+
+            receiving_advanced_boxscores = (
+                pd.concat(receiving_adv_dfs) if receiving_adv_dfs else pd.DataFrame()
+            )
             if not receiving_advanced_boxscores.empty:
-                receiving_advanced_boxscores = receiving_advanced_boxscores.drop(columns=["Tgt", "Rec", "Yds", "TD"], errors='ignore')
+                receiving_advanced_boxscores = receiving_advanced_boxscores.drop(
+                    columns=["Tgt", "Rec", "Yds", "TD"], errors="ignore"
+                )
 
-            rushing_advanced_boxscores = pd.concat(rushing_adv_dfs) if rushing_adv_dfs else pd.DataFrame()
+            rushing_advanced_boxscores = (
+                pd.concat(rushing_adv_dfs) if rushing_adv_dfs else pd.DataFrame()
+            )
             if not rushing_advanced_boxscores.empty:
-                rushing_advanced_boxscores = rushing_advanced_boxscores.drop(columns=["Att", "Yds", "TD"], errors='ignore')
+                rushing_advanced_boxscores = rushing_advanced_boxscores.drop(
+                    columns=["Att", "Yds", "TD"], errors="ignore"
+                )
 
-            defense_advanced_boxscores = pd.concat(defense_adv_dfs) if defense_adv_dfs else pd.DataFrame()
+            defense_advanced_boxscores = (
+                pd.concat(defense_adv_dfs) if defense_adv_dfs else pd.DataFrame()
+            )
             if not defense_advanced_boxscores.empty:
-                defense_advanced_boxscores = defense_advanced_boxscores.drop(columns=["Int", "Yds", "TD", "Sk"], errors='ignore')
+                defense_advanced_boxscores = defense_advanced_boxscores.drop(
+                    columns=["Int", "Yds", "TD", "Sk"], errors="ignore"
+                )
 
-            snap_count_boxscores = pd.concat(snap_count_dfs) if snap_count_dfs else pd.DataFrame()
+            snap_count_boxscores = (
+                pd.concat(snap_count_dfs) if snap_count_dfs else pd.DataFrame()
+            )
 
             # Merge FG with snap counts if both exist
             if not fg_boxscores.empty and not snap_count_boxscores.empty:
-                fg_boxscores = pd.merge(fg_boxscores, snap_count_boxscores[["player_id", "team"]], 
-                                      on="player_id", how="left")
+                fg_boxscores = pd.merge(
+                    fg_boxscores,
+                    snap_count_boxscores[["player_id", "team"]],
+                    on="player_id",
+                    how="left",
+                )
                 self.logger.debug("Merged FG data with snap counts")
 
             # Collect all dataframes for merging
@@ -284,7 +362,7 @@ class NFLDailyStatsCollector:
 
             # Filter out empty dataframes
             dfs_to_merge = [df for df in dfs_to_merge if not df.empty]
-            
+
             if not dfs_to_merge:
                 self.logger.warning("No data to merge")
                 return None if not is_cache else pd.DataFrame()
@@ -292,14 +370,22 @@ class NFLDailyStatsCollector:
             self.logger.info(f"Merging {len(dfs_to_merge)} dataframes...")
 
             # Extract source_url columns and drop from original
-            source_urls = [df[["player_id", "player", "team", "date", "source_url"]] 
-                          for df in dfs_to_merge if "source_url" in df.columns and not df.empty]
-            dfs_wo_source_url = [df.drop(columns=["source_url"], errors='ignore') for df in dfs_to_merge]
+            source_urls = [
+                df[["player_id", "player", "team", "date", "source_url"]]
+                for df in dfs_to_merge
+                if "source_url" in df.columns and not df.empty
+            ]
+            dfs_wo_source_url = [
+                df.drop(columns=["source_url"], errors="ignore") for df in dfs_to_merge
+            ]
 
             # Merge the main DataFrames
             merged = reduce(
                 lambda left, right: pd.merge(
-                    left, right, on=["player_id", "player", "team", "date", 'week'], how="outer"
+                    left,
+                    right,
+                    on=["player_id", "player", "team", "date", "week"],
+                    how="outer",
                 ),
                 dfs_wo_source_url,
             )
@@ -307,30 +393,39 @@ class NFLDailyStatsCollector:
             # Add source URLs back if they exist
             if source_urls:
                 all_source_urls = pd.concat(source_urls)
-                merged = pd.merge(merged, all_source_urls, on=["player_id", "player", "team", "date"], how="left")
+                merged = pd.merge(
+                    merged,
+                    all_source_urls,
+                    on=["player_id", "player", "team", "date"],
+                    how="left",
+                )
                 self.logger.debug("Added source URLs back to merged data")
 
             # Add season and remove duplicates
-            merged["season"] = current_date.year if current_date.month > 7 else current_date.year - 1
+            merged["season"] = (
+                current_date.year if current_date.month > 7 else current_date.year - 1
+            )
             merged = merged.drop_duplicates()
-            
+
             self.logger.info(f"Final merged dataset shape: {merged.shape}")
 
             # Save to cloud if requested
             if self.gcloud_save:
                 self.logger.info("Uploading to Google Cloud...")
                 self._save_to_gcloud(merged)
-                
+
             if is_cache:
                 self.logger.info("Cache upload completed successfully")
             else:
-                self.logger.info("Final data processing and upload completed successfully")
-                
+                self.logger.info(
+                    "Final data processing and upload completed successfully"
+                )
+
             return merged
-            
+
         except ValueError as e:
             if "No objects to concatenate" in str(e):
-                self.logger.warning('No NFL games found in the requested date range')
+                self.logger.warning("No NFL games found in the requested date range")
                 return None
             else:
                 self.logger.error(f"ValueError during data processing: {e}")
@@ -351,7 +446,7 @@ class NFLDailyStatsCollector:
 
         games_url = f"https://www.pro-football-reference.com/years/{season}/games.htm"
         self.logger.debug(f"Fetching games from: {games_url}")
-        
+
         games_table = pd.read_html(games_url, extract_links="body")[0]
 
         # Compile the dates and suffixes from the full season for later date filtering
@@ -359,11 +454,9 @@ class NFLDailyStatsCollector:
         games_table["suffixes"] = games_table["Unnamed: 7"].apply(lambda x: x[1])
 
         # filter down to just the game suffixes that fall on the date
-        suffixes = games_table[["dates", "suffixes", 'Week']].dropna()
+        suffixes = games_table[["dates", "suffixes", "Week"]].dropna()
 
-        relevant_games = suffixes[
-            suffixes.dates == date.strftime("%Y-%m-%d")
-        ]
+        relevant_games = suffixes[suffixes.dates == date.strftime("%Y-%m-%d")]
 
         relevant_suffixes = relevant_games.suffixes
 
@@ -372,7 +465,7 @@ class NFLDailyStatsCollector:
 
         return relevant_suffixes, relevant_weeks
 
-    def _get_commented_tables(self, url: str) -> None:
+    def _fetch_commented_tables(self, url: str) -> None:
         scraped_html = requests.get(url)
         soup = BeautifulSoup(scraped_html.content, "html.parser")
 
@@ -386,7 +479,7 @@ class NFLDailyStatsCollector:
         self.commented_out_tables = [
             tab[0] for tab in commented_out_tables if len(tab) == 1
         ]
-        
+
         self.logger.debug(f"Found {len(self.commented_out_tables)} commented tables")
 
     def _extract_ids(self, table: pd.DataFrame, id_col: str):
@@ -429,11 +522,14 @@ class NFLDailyStatsCollector:
         main_table["away_team"] = self.away_team
 
         # Add the source URL
-        main_table['source_url'] = self.url
+        main_table["source_url"] = self.url
 
         # Add the week
-        main_table['week'] = self.week
-        
+        main_table["week"] = self.week
+
+        # Final rename of columns
+        main_table = main_table.rename(columns=OFFENSIVE_RENAMING_DICT)
+
         self.logger.debug(f"Processed offensive data: {main_table.shape[0]} players")
 
         return main_table
@@ -479,8 +575,8 @@ class NFLDailyStatsCollector:
         fg_agg["week"] = self.week
 
         # Add the source URL
-        fg_agg['source_url'] = self.url
-        
+        fg_agg["source_url"] = self.url
+
         self.logger.debug(f"Processed FG data: {fg_agg.shape[0]} kickers")
 
         return fg_agg
@@ -495,7 +591,9 @@ class NFLDailyStatsCollector:
                 if table.get("id") == table_id
             ][0]
         except IndexError:
-            self.logger.warning(f"No {table_id} table found: Returning an empty DataFrame")
+            self.logger.warning(
+                f"No {table_id} table found: Returning an empty DataFrame"
+            )
             return pd.DataFrame()
 
         header = 0 if "advanced" in table_id else 1
@@ -508,16 +606,16 @@ class NFLDailyStatsCollector:
         table = table.dropna(subset=["player_id"]).rename(columns=renaming_dict)
 
         # Add the source URL
-        table['source_url'] = self.url
-        
+        table["source_url"] = self.url
+
         self.logger.debug(f"Processed {table_id} table: {table.shape[0]} records")
 
         return table
-    
+
     def _save_to_gcloud(self, df: pd.DataFrame | None = None):
         if df is None:
             df = self.full_boxscore
-            
+
         if not isinstance(df, pd.DataFrame) or df.empty:
             self.logger.warning("No data to save to Google Cloud")
             return
@@ -525,18 +623,21 @@ class NFLDailyStatsCollector:
         try:
             for year in df.season.unique():
                 upload_df = df[df.season == year]
-                self.logger.info(f"Uploading {upload_df.shape[0]} records for season {year}")
+                self.logger.info(
+                    f"Uploading {upload_df.shape[0]} records for season {year}"
+                )
                 self._gcloud_upload_helper(df=upload_df, year=year)
         except Exception as e:
             self.logger.error(f"Failed to save to Google Cloud: {e}")
             raise
-            
 
     def _gcloud_upload_helper(self, df, year):
         try:
             self.logger.debug(f"Downloading existing data for {year}")
             downloader = CloudHelper()
-            download = downloader.download_from_cloud(f'nfl-data-collection/boxscores_{year}.parquet')
+            download = downloader.download_from_cloud(
+                f"nfl-data-collection/boxscores_{year}.parquet"
+            )
 
             # If possible, drop duplicates from the download for a second pull on the same day and remove any
             # Unnamed columns from the upload/download process
@@ -551,13 +652,17 @@ class NFLDailyStatsCollector:
             self.boxscores_df = pd.concat([download, df]).drop_duplicates(
                 subset=["player_id", "source_url"]
             )
-            
-            self.logger.info(f"Final dataset for {year}: {self.boxscores_df.shape[0]} records")
+
+            self.logger.info(
+                f"Final dataset for {year}: {self.boxscores_df.shape[0]} records"
+            )
 
             uploader = CloudHelper(self.boxscores_df)
-            uploader.upload_to_cloud(bucket_name='nfl-data-collection', file_name=f'boxscores_{year}.parquet')
+            uploader.upload_to_cloud(
+                bucket_name="nfl-data-collection", file_name=f"boxscores_{year}.parquet"
+            )
             self.logger.info(f"Successfully uploaded boxscores_{year}.parquet")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to upload data for year {year}: {e}")
             raise
