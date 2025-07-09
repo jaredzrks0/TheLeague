@@ -69,4 +69,4 @@ data/*
 *.tsv
 
 # You can explicitly allow some useful files
-!data/processed/cleaned_sample.csv
+!tests/data
