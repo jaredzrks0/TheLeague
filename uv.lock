@@ -116,6 +116,15 @@ wheels = [
 ]
 
 [[package]]
+name = "aiosmtplib"
+version = "4.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cf/d1/0ee117510ae0513f945ff3ee42edee20a3f236b2020c954f12ccd0931f95/aiosmtplib-4.0.1.tar.gz", hash = "sha256:10d426afe923edeb28ce0f007da0ee4060e9e12dd3890c162b22e1958da35761", size = 60797, upload-time = "2025-04-26T14:32:06.933Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/f9/44fb8e33f2624fbcd40adee97143f6324123d80818f939f90a80ef5bade2/aiosmtplib-4.0.1-py3-none-any.whl", hash = "sha256:5f56ad99fa0653f32e80636f917dc0251489917d6a363a9b58a586e575d21f28", size = 27031, upload-time = "2025-04-26T14:32:05.505Z" },
+]
+
+[[package]]
 name = "async-timeout"
 version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -432,6 +441,15 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud"
+version = "0.34.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/0e/8bf108fa9e3e036fe37a86598f1315e7b8de90b89012fd65704dc30ac6ad/google-cloud-0.34.0.tar.gz", hash = "sha256:01430187cf56df10a9ba775dd547393185d4b40741db0ea5889301f8e7a9d5d3", size = 2514, upload-time = "2018-07-30T19:08:17.761Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/b1/7c54d1950e7808df06642274e677dbcedba57f75307adf2e5ad8d39e5e0e/google_cloud-0.34.0-py2.py3-none-any.whl", hash = "sha256:fb1ab7b0548fe44b3d538041f0a374505b7f990d448a935ea36649c5ccab5acf", size = 1839, upload-time = "2018-07-30T19:08:16.739Z" },
+]
+
+[[package]]
 name = "google-cloud-core"
 version = "2.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -715,6 +733,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2b/b0/fdf4c73ad1c55e0f4dbbf2aa59dd37037334091f9a4961646d2b7ac91a86/multidict-6.4.4-cp313-cp313t-win32.whl", hash = "sha256:3312f63261b9df49be9d57aaa6abf53a6ad96d93b24f9cc16cf979956355ce6e", size = 41913, upload-time = "2025-05-19T14:16:03.199Z" },
     { url = "https://files.pythonhosted.org/packages/8e/92/27989ecca97e542c0d01d05a98a5ae12198a243a9ee12563a0313291511f/multidict-6.4.4-cp313-cp313t-win_amd64.whl", hash = "sha256:ba852168d814b2c73333073e1c7116d9395bea69575a01b0b3c89d2d5a87c8fb", size = 46112, upload-time = "2025-05-19T14:16:04.909Z" },
     { url = "https://files.pythonhosted.org/packages/84/5d/e17845bb0fa76334477d5de38654d27946d5b5d3695443987a094a71b440/multidict-6.4.4-py3-none-any.whl", hash = "sha256:bd4557071b561a8b3b6075c3ce93cf9bfb6182cb241805c3d66ced3b75eff4ac", size = 10481, upload-time = "2025-05-19T14:16:36.024Z" },
+]
+
+[[package]]
+name = "multimodal-communication"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiosmtplib" },
+    { name = "google-cloud" },
+    { name = "google-cloud-storage" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/9b/c3596aa39cfa304a1da7c0342c1403b0b1e20fe25457189dc5eaf9e66570/multimodal_communication-0.1.1.tar.gz", hash = "sha256:4d9dc5f1e16a087881d25d69b964428855b70f81f25cfa86feecf2a74b4ba00b", size = 18683, upload-time = "2025-07-09T00:52:48.011Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/69/909ca866a7c6eb54c9859b6c8b7e387c10a7f891e461ee4068e01a29c7bb/multimodal_communication-0.1.1-py3-none-any.whl", hash = "sha256:bb2cd8bce47e403b352af424d2f0671e5ad3a065449f6a0007c4ddb91879461a", size = 6896, upload-time = "2025-07-09T00:52:47.285Z" },
 ]
 
 [[package]]
@@ -1186,6 +1218,7 @@ dependencies = [
     { name = "fsspec" },
     { name = "gcsfs" },
     { name = "lxml" },
+    { name = "multimodal-communication" },
     { name = "pandas" },
     { name = "polars" },
     { name = "pytest" },
@@ -1198,6 +1231,7 @@ requires-dist = [
     { name = "fsspec", specifier = ">=2025.5.1" },
     { name = "gcsfs", specifier = ">=2025.5.1" },
     { name = "lxml", specifier = ">=5.4.0" },
+    { name = "multimodal-communication", specifier = ">=0.1.1" },
     { name = "pandas", specifier = ">=2.3.0" },
     { name = "polars", specifier = ">=1.31.0" },
     { name = "pytest", specifier = ">=8.4.1" },
