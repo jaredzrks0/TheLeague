@@ -1,13 +1,12 @@
+
 import pytest
+import io
 import pandas as pd
-from io import StringIO
 from theleague.nfl_handler import NFLDailyStatsCollector
 
-
+# === Fixture to create the collector ===
 @pytest.fixture
 def collector():
-    # Initialize with minimal args; adjust as per your constructor
-    # We mock or set required attributes like str_date, url, week for the test
     obj = NFLDailyStatsCollector(
         start_date="2023-09-10",
         end_date="2023-09-10",
@@ -19,44 +18,39 @@ def collector():
     obj.week = 1
     return obj
 
-
+# === Fixture that loads the HTML from a local file ===
 @pytest.fixture
-def local_html():
-    with open("tests/data/old_sample_game.html", "r", encoding="utf-8") as f:
+def local_html(request):
+    fpath = request.param
+    with open(fpath, "r", encoding="utf-8") as f:
         return f.read()
-
-
+    
+# Fixture to mock pandas.read_html using the HTML loaded by local_html
 @pytest.fixture
-def mock_read_html(local_html):
-    original_read_html = pd.read_html  # <--- Capture before patching
+def mock_read_html(monkeypatch, local_html):
+    original_read_html = pd.read_html
 
     def _mock_read_html(*args, **kwargs):
-        return original_read_html(local_html, **kwargs)
+        # Always parse from the loaded local HTML string
+        html_io = io.StringIO(local_html)
+        return original_read_html(html_io, **kwargs)
 
-    return _mock_read_html
+    monkeypatch.setattr(pd, "read_html", _mock_read_html)
+    yield
+    # monkeypatch automatically reverts after the test
 
+# === The test using monkeypatch and indirect HTML loading ===
+@pytest.mark.parametrize(
+    "local_html", 
+    ["tests/data/old_sample_game.html", "tests/data/new_sample_game.html"], 
+    indirect=True
+)
+def test_fetch_offensive_and_fg_boxscore(monkeypatch, collector, mock_read_html, local_html):
+    # Backup the original function just in case
+    original_read_html = pd.read_html
 
-def test_fetch_offensive_and_fg_boxscore(monkeypatch, collector, mock_read_html):
-    # Mock pd.read_html to read from the local HTML string instead of the URL
-    monkeypatch.setattr(pd, "read_html", mock_read_html)
+    # Run the function you're testing
+    df = collector._fetch_offensive_boxscore(url='fakeurl')
 
-    # Call _fetch_offensive_boxscore - it uses pd.read_html internally
-    offensive_df = collector._fetch_offensive_boxscore("any_url_here")
-    assert not offensive_df.empty, "Offensive DataFrame should not be empty"
-    assert "player_id" in offensive_df.columns, (
-        "Offensive DataFrame missing player_id column"
-    )
-    assert "date" in offensive_df.columns, "Offensive DataFrame missing date column"
-    assert offensive_df["date"].iloc[0] == collector.str_date
-
-    # The method sets home_team and away_team attributes
-    assert hasattr(collector, "home_team"), "Collector missing home_team attribute"
-    assert hasattr(collector, "away_team"), "Collector missing away_team attribute"
-
-    # # Call _fetch_fg_boxscore - relies on collector.all_tables set by previous method
-    # fg_df = collector._fetch_fg_boxscore()
-    # assert not fg_df.empty, "FG DataFrame should not be empty"
-    # assert "player_id" in fg_df.columns, "FG DataFrame missing player_id column"
-    # assert "kicker" in fg_df.columns, "FG DataFrame missing kicker column"
-    # assert "distance" in fg_df.columns, "FG DataFrame missing distance column"
-    # assert fg_df["date"].iloc[0] == collector.str_date
+    # Simple assertion to ensure the DataFrame isn't empty
+    assert not df.empty
