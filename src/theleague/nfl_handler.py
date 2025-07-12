@@ -521,11 +521,19 @@ class NFLDailyStatsCollector:
         main_table["home_team"] = self.home_team
         main_table["away_team"] = self.away_team
 
+        # Add a home_away column
+        main_table["home_away"] = main_table.apply(
+            lambda x: "H" if x.Tm == x.home_team else "A", axis=1
+        )
+
         # Add the source URL
         main_table["source_url"] = self.url
 
         # Add the week
         main_table["week"] = self.week
+
+        # Convert to numeric cols where possible
+        main_table = main_table.apply(lambda col: pd.to_numeric(col, errors="ignore"))
 
         # Final rename of columns
         main_table = main_table.rename(columns=OFFENSIVE_RENAMING_DICT)
