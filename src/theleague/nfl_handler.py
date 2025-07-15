@@ -562,15 +562,23 @@ class NFLDailyStatsCollector:
 
         fg_boxscore["Quarter"] = fg_boxscore["Quarter"].replace("", np.nan)
         fg_boxscore["Quarter"] = fg_boxscore["Quarter"].ffill()
-        fg_boxscore = fg_boxscore[["player_id", "kicker", "distance"]]
+        fg_boxscore = fg_boxscore[["player_id", "kicker", "distance", "Tm"]]
         fg_boxscore["distance"] = pd.to_numeric(
             fg_boxscore["distance"], errors="coerce"
         ).astype("Int64")
 
         # Try to find a way to count the number of game winning FGs base on a criteria from the full scoring table
 
-        fg_agg = fg_boxscore.groupby(by=["player_id", "kicker"]).agg(["count", "sum"])
-        fg_agg.columns = fg_agg.columns.droplevel(0)
+        fg_agg = fg_agg = (
+            fg_boxscore.groupby(["player_id", "kicker", "Tm"])
+            .agg(
+                num_fg_made=("distance", "count"),
+                total_made_fg_distance=("distance", "sum"),
+                fg_distance_avg=("distance", "mean"),  # optional
+            )
+            .reset_index()
+        )
+
         fg_agg = fg_agg.reset_index()
         fg_agg = fg_agg.rename(
             columns={"count": "num_fg_made", "sum": "total_made_fg_distance"}
@@ -590,7 +598,10 @@ class NFLDailyStatsCollector:
         return fg_agg
 
     def _fetch_commented_table(
-        self, table_id: str, id_col: str, renaming_dict: dict
+        self,
+        table_id: str,
+        id_col: str,
+        renaming_dict: dict | None = None,
     ) -> pd.DataFrame:
         try:
             table_html = [
@@ -611,7 +622,10 @@ class NFLDailyStatsCollector:
 
         table = self._extract_ids(table, id_col)
 
-        table = table.dropna(subset=["player_id"]).rename(columns=renaming_dict)
+        table = table.dropna(subset=["player_id"])
+
+        if renaming_dict:
+            table = table.rename(columns=renaming_dict)
 
         # Add the source URL
         table["source_url"] = self.url

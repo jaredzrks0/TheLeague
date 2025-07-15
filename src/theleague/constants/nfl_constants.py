@@ -65,6 +65,8 @@ PLAYER_DEFENSE_RENAMING_DICT = {
     "FR": "fumble_recoveries",
     "Yds.1": "fumble_return_yards",
     "TD.1": "fumble_touchdowns",
+    "Solo": "solo",
+    "Ast": "ast",
 }
 
 PUNT_KICK_RETURNS_RENAMING_DICT = {
