@@ -126,7 +126,7 @@ RECEIVING_ADVANCED_RENAMING_DICT = {
     "YAC": "receiving_yards_after_catch",
     "YAC/R": "receiving_yac_per_reception",
     "ADOT": "receiving_average_depth_of_target",
-    "BrkTkl": "breceiving_roken_tackles",
+    "BrkTkl": "receiving_broken_tackles",
     "Rec/Br": "receiving_receptions_per_broken_tackle",
     "Drop": "receiving_drops",
     "Drop%": "receiving_drop_pct",

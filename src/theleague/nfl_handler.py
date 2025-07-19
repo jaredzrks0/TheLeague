@@ -581,7 +581,11 @@ class NFLDailyStatsCollector:
 
         fg_agg = fg_agg.reset_index()
         fg_agg = fg_agg.rename(
-            columns={"count": "num_fg_made", "sum": "total_made_fg_distance"}
+            columns={
+                "count": "num_fg_made",
+                "sum": "total_made_fg_distance",
+                "Tm": "team",
+            }
         )
 
         # Add the date as a column
