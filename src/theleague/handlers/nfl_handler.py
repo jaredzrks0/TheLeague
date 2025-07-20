@@ -1,6 +1,8 @@
 import time
 import requests
 import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup, Comment
 from io import StringIO
 import numpy as np
@@ -12,6 +14,7 @@ import logging
 from theleague.constants.nfl_constants import (
     OFFENSIVE_COLUMNS_LIST,
     OFFENSIVE_RENAMING_DICT,
+    FG_RENAMING_DICT,
     PLAYER_DEFENSE_RENAMING_DICT,
     PUNT_KICK_RETURNS_RENAMING_DICT,
     PUNT_KICK_RENAMING_DICT,
@@ -26,14 +29,17 @@ from theleague.constants.nfl_constants import (
 class NFLDailyStatsCollector:
     def __init__(
         self,
-        start_date,
-        end_date,
+        start_date: str,
+        end_date: str | None = None,
         gcloud_save: bool = True,
         local_save: bool = False,
         caching: bool = False,
         cache_frequency: int = 5,
         log_level: str = "INFO",
     ):
+        # If no end_date given, default to the start date for a 1 day pull
+        if not end_date:
+            end_date = start_date
         self.dates = pd.date_range(start_date, end_date)
         season_years = pd.Series(self.dates).apply(
             lambda x: x.year - 1 if x.month <= 8 else x.year
@@ -63,6 +69,12 @@ class NFLDailyStatsCollector:
             file_handler = logging.FileHandler("nfl_stats.log")
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
+
+        # Set up the Selenium driver
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        self.driver = webdriver.Chrome(options=options)
 
         assert len(self.dates) > 0, (
             f"start_date: {start_date} must be less than end_date: {end_date}"
@@ -121,8 +133,8 @@ class NFLDailyStatsCollector:
                     all_cleaned_fg_dfs.append(fg_data)
 
                     ### Get Commented tables ###
-                    self._fetch_commented_tables(self.url)
                     time.sleep(6.1)
+                    self._fetch_commented_tables(self.url)
 
                     # Basic Defense
                     basic_defense = self._fetch_commented_table(
@@ -214,6 +226,9 @@ class NFLDailyStatsCollector:
                     self.logger.error(f"Failed to scrape {self.url}: {e}")
                 time.sleep(6.1)  # Wait between each game to respect rate limits
 
+        # Close the driver
+        self.driver.quit()
+
         # Final processing and upload
         self.logger.info("Processing final data and uploading to cloud...")
         self.full_boxscore = self._process_and_upload_data(
@@ -278,7 +293,8 @@ class NFLDailyStatsCollector:
                 rushing_adv_dfs, drop_cols=["Att", "Yds", "TD"]
             )
             defense_advanced_boxscores = self._concat_and_drop(
-                defense_adv_dfs, drop_cols=["Int", "Yds", "TD", "Sk"]
+                defense_adv_dfs,
+                drop_cols=["Int", "Yds", "TD", "Sk", "defensive_qb_hits"],
             )
             snap_count_boxscores = self._concat_and_drop(snap_count_dfs)
 
@@ -343,6 +359,24 @@ class NFLDailyStatsCollector:
             )
             merged = merged.drop_duplicates()
 
+            # Reorder the columns with the identifiers at the front
+            identifier_cols = [
+                "player",
+                "player_id",
+                "team",
+                "date",
+                "week",
+                "season",
+                "home_away",
+                "home_team",
+                "away_team",
+            ]
+
+            merged = merged[
+                identifier_cols
+                + [col for col in merged.columns if col not in identifier_cols]
+            ].drop(columns=["index"])
+
             self.logger.info(f"Final merged dataset shape: {merged.shape}")
 
             # Save to cloud if requested
@@ -389,7 +423,10 @@ class NFLDailyStatsCollector:
         games_url = f"https://www.pro-football-reference.com/years/{season}/games.htm"
         self.logger.debug(f"Fetching games from: {games_url}")
 
-        games_table = pd.read_html(games_url, extract_links="body")[0]
+        self.driver.get(games_url)
+        time.sleep(3)
+        games_html = self.driver.page_source
+        games_table = pd.read_html(StringIO(str(games_html)), extract_links="body")[0]
 
         # Compile the dates and suffixes from the full season for later date filtering
         games_table["dates"] = games_table["Date"].apply(lambda x: x[0])
@@ -435,7 +472,10 @@ class NFLDailyStatsCollector:
         return table
 
     def _fetch_offensive_boxscore(self, url):
-        self.all_tables = pd.read_html(url, extract_links="body")
+        self.driver.get(url)
+        time.sleep(3)
+        html = self.driver.page_source
+        self.all_tables = pd.read_html(StringIO(str(html)), extract_links="body")
         main_table = self.all_tables[2]
         main_table.columns = main_table.columns.droplevel(0)
 
@@ -450,7 +490,7 @@ class NFLDailyStatsCollector:
         main_table = main_table.map(lambda x: x[0] if isinstance(x, tuple) else x)
         main_table = main_table.dropna(subset="player_id")
 
-        # Update the column names
+        # Update the column names order
         main_table.columns = OFFENSIVE_COLUMNS_LIST
 
         # Add the date
@@ -474,9 +514,6 @@ class NFLDailyStatsCollector:
         # Add the week
         main_table["week"] = self.week
 
-        # Convert to numeric cols where possible
-        main_table = main_table.apply(lambda col: pd.to_numeric(col, errors="ignore"))
-
         # Final rename of columns
         main_table = main_table.rename(columns=OFFENSIVE_RENAMING_DICT)
 
@@ -493,7 +530,7 @@ class NFLDailyStatsCollector:
         fg_boxscore = fg_boxscore.dropna(subset="player_id")
         fg_boxscore = fg_boxscore[
             (fg_boxscore.Detail.str.contains("field goal"))
-            & (fg_boxscore.Detail.str.contains("field goal return") == False)
+            & (fg_boxscore.Detail.str.contains("field goal return") == False)  # noqa: E712
         ]
         fg_boxscore["kicker"] = fg_boxscore.Detail.apply(
             lambda x: " ".join(x.split("yard")[0].split(" ")[0:-2])
@@ -514,22 +551,18 @@ class NFLDailyStatsCollector:
         fg_agg = fg_agg = (
             fg_boxscore.groupby(["player_id", "kicker", "Tm"])
             .agg(
-                num_fg_made=("distance", "count"),
-                total_made_fg_distance=("distance", "sum"),
-                fg_distance_avg=("distance", "mean"),  # optional
+                kicking_num_field_goals_made=("distance", "count"),
+                kicking_total_made_field_goals_distance=("distance", "sum"),
+                kicking_field_goals_made_average_distance=(
+                    "distance",
+                    "mean",
+                ),  # optional
             )
             .reset_index()
         )
 
         fg_agg = fg_agg.reset_index()
-        fg_agg = fg_agg.rename(
-            columns={
-                "count": "num_fg_made",
-                "sum": "total_made_fg_distance",
-                "Tm": "team",
-                "kicker": "player",
-            }
-        )
+        fg_agg = fg_agg.rename(columns=FG_RENAMING_DICT)
 
         # Add the date as a column
         fg_agg["date"] = self.str_date

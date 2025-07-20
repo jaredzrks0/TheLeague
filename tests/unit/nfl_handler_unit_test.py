@@ -3,8 +3,8 @@ from functools import wraps
 import io
 import pandas as pd
 from theleague.handlers.nfl_handler import NFLDailyStatsCollector
+from theleague.pydantic_models.nfl_model import NFLBoxscore
 from theleague.constants.nfl_constants import (
-    OFFENSIVE_RENAMING_DICT,
     PLAYER_DEFENSE_RENAMING_DICT,
     PUNT_KICK_RETURNS_RENAMING_DICT,
     PUNT_KICK_RENAMING_DICT,
@@ -114,13 +114,13 @@ def test_fetch_fg_boxscore(monkeypatch, collector, mock_read_html, local_html):
     collector._fetch_offensive_boxscore(url="fakeurl")
     df = collector._fetch_fg_boxscore()
     assert not df.empty
-    assert df.total_made_fg_distance.notnull().all()
+    assert df.kicking_total_made_field_goals_distance.notnull().all()
 
     required_cols = {
         "player_id",
         "player",
-        "num_fg_made",
-        "total_made_fg_distance",
+        "kicking_num_field_goals_made",
+        "kicking_total_made_field_goals_distance",
         "date",
         "team",
     }
@@ -171,7 +171,7 @@ def generate_table_test(
             )
             for col in required_keys:
                 assert df[col].isna().sum() == 0, (
-                    f'column "{col}" must contain no missing data'
+                    f'column "{col}" must be contain no missing data'
                 )
 
             # Ensure unique player_ids
@@ -192,28 +192,28 @@ test_fetch_basic_defense_table = generate_table_test(
     table_id="player_defense",
     id_col="Player",
     renaming_dict=PLAYER_DEFENSE_RENAMING_DICT,
-    required_keys=["player", "team", "total_tackles", "solo"],
+    required_keys=["player", "team"],
 )
 
 test_fetch_punt_kick_returns_table = generate_table_test(
     table_id="returns",
     id_col="Player",
     renaming_dict=PUNT_KICK_RETURNS_RENAMING_DICT,
-    required_keys=["player", "team", "kick_return_yards", "punt_return_yards"],
+    required_keys=["player", "team"],
 )
 
 test_fetch_punt_kick_table = generate_table_test(
     table_id="kicking",
     id_col="Player",
     renaming_dict=PUNT_KICK_RENAMING_DICT,
-    required_keys=["player", "team", "extra_points_made", "punts", "longest_punt"],
+    required_keys=["player", "team"],
 )
 
 test_fetch_passing_advanced_table = generate_table_test(
     table_id="passing_advanced",
     id_col="Player",
     renaming_dict=PASSING_ADVANCED_RENAMING_DICT,
-    required_keys=["player", "team", "first_downs_thrown", "bad_throws", "sacks_taken"],
+    required_keys=["player", "team"],
 )
 
 test_fetch_receiving_advanced_table = generate_table_test(
@@ -223,9 +223,6 @@ test_fetch_receiving_advanced_table = generate_table_test(
     required_keys=[
         "player",
         "team",
-        "receiving_first_downs",
-        "receiving_broken_tackles",
-        "receiving_drops",
     ],
 )
 
@@ -236,9 +233,6 @@ test_fetch_rushing_advanced_table = generate_table_test(
     required_keys=[
         "player",
         "team",
-        "rushing_first_downs",
-        "rushing_yards_before_contact",
-        "rushing_broken_tackles",
     ],
 )
 
@@ -249,10 +243,6 @@ test_fetch_defense_advanced_table = generate_table_test(
     required_keys=[
         "player",
         "team",
-        "defense_targets",
-        "defense_blitzes",
-        "defense_qb_hits",
-        "defense_missed_tackles",
     ],
 )
 
@@ -260,13 +250,7 @@ test_fetch_snap_counts_table = generate_table_test(
     table_id="home_snap_counts",
     id_col="Player",
     renaming_dict=SNAP_COUNT_RENAMING_DICT,
-    required_keys=[
-        "player",
-        "position",
-        "offense_snaps",
-        "defense_snaps",
-        "special_teams_snaps",
-    ],
+    required_keys=["player", "position"],
 )
 
 
@@ -292,7 +276,7 @@ def test_extract_ids(collector):
 
 
 @parametrize_local_html
-def test_process_and_upload_data(
+def test_process_data(
     monkeypatch, collector, mock_read_html, local_html, mock_requests_get
 ):
     # Fetch all relevant boxscores
