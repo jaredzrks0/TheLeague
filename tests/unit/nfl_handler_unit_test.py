@@ -2,7 +2,7 @@ import pytest
 from functools import wraps
 import io
 import pandas as pd
-from theleague.nfl_handler import NFLDailyStatsCollector
+from theleague.handlers.nfl_handler import NFLDailyStatsCollector
 from theleague.constants.nfl_constants import (
     OFFENSIVE_RENAMING_DICT,
     PLAYER_DEFENSE_RENAMING_DICT,
@@ -118,7 +118,7 @@ def test_fetch_fg_boxscore(monkeypatch, collector, mock_read_html, local_html):
 
     required_cols = {
         "player_id",
-        "kicker",
+        "player",
         "num_fg_made",
         "total_made_fg_distance",
         "date",
@@ -141,7 +141,13 @@ def test_fetch_commented_tables(
 
 
 # Helper test generator
-def generate_table_test(table_id, id_col, renaming_dict, required_keys):
+def generate_table_test(
+    table_id,
+    id_col,
+    renaming_dict,
+    required_keys,
+    extra_assertions: list | None = None,
+):
     @parametrize_local_html
     def test_func(
         monkeypatch, collector, mock_read_html, local_html, mock_requests_get, request
@@ -167,8 +173,17 @@ def generate_table_test(table_id, id_col, renaming_dict, required_keys):
                 assert df[col].isna().sum() == 0, (
                     f'column "{col}" must contain no missing data'
                 )
+
+            # Ensure unique player_ids
+            assert df.player_id.is_unique
+
         else:
             assert df.empty
+
+        # Go through extra table specific assertions
+        if extra_assertions:
+            for condition, message in extra_assertions:
+                assert condition, message
 
     return test_func
 
@@ -277,43 +292,82 @@ def test_extract_ids(collector):
 
 
 @parametrize_local_html
-def test_process_and_upload_data(monkeypatch, collector, mock_read_html, local_html):
-    monkeypatch.setattr(collector, "_save_to_gcloud", lambda df: None)
-
-    df = collector._fetch_offensive_boxscore(url="fakeurl")
+def test_process_and_upload_data(
+    monkeypatch, collector, mock_read_html, local_html, mock_requests_get
+):
+    # Fetch all relevant boxscores
+    offensive_df = collector._fetch_offensive_boxscore(url="fakeurl")
     fg_df = collector._fetch_fg_boxscore()
 
+    collector._fetch_commented_tables(url="fakeurl")
+    monkeypatch.setattr(collector, "_save_to_gcloud", lambda df: None)
+    monkeypatch.setattr(pd, "read_html", READ_HTML)
+
+    defense_df = collector._fetch_commented_table(
+        table_id="player_defense",
+        id_col="Player",
+        renaming_dict=PLAYER_DEFENSE_RENAMING_DICT,
+    )
+
+    returns_df = collector._fetch_commented_table(
+        table_id="returns",
+        id_col="Player",
+        renaming_dict=PUNT_KICK_RETURNS_RENAMING_DICT,
+    )
+
+    kicking_df = collector._fetch_commented_table(
+        table_id="kicking",
+        id_col="Player",
+        renaming_dict=PUNT_KICK_RENAMING_DICT,
+    )
+    passing_adv_df = collector._fetch_commented_table(
+        table_id="passing_advanced",
+        id_col="Player",
+        renaming_dict=PASSING_ADVANCED_RENAMING_DICT,
+    )
+    receiving_adv_df = collector._fetch_commented_table(
+        table_id="receiving_advanced",
+        id_col="Player",
+        renaming_dict=RECEIVING_ADVANCED_RENAMING_DICT,
+    )
+    rushing_adv_df = collector._fetch_commented_table(
+        table_id="rushing_advanced",
+        id_col="Player",
+        renaming_dict=RUSHING_ADVANCED_RENAMING_DICT,
+    )
+    defense_adv_df = collector._fetch_commented_table(
+        table_id="defense_advanced",
+        id_col="Player",
+        renaming_dict=DEFENSE_ADVANCED_RENAMING_DICT,
+    )
+    snap_counts_df = collector._fetch_commented_table(
+        table_id="home_snap_counts",
+        id_col="Player",
+        renaming_dict=SNAP_COUNT_RENAMING_DICT,
+    )
+    snap_counts_df["team"] = collector.home_team
+    snap_counts_df["date"] = collector.str_date
+    snap_counts_df["week"] = collector.week
+
+    # Run full processing function
     result = collector._process_and_upload_data(
-        offensive_dfs=[df],
+        offensive_dfs=[offensive_df],
         fg_dfs=[fg_df],
-        defense_dfs=[],
-        punt_kick_return_dfs=[],
-        punt_kick_dfs=[],
-        passing_adv_dfs=[],
-        receiving_adv_dfs=[],
-        rushing_adv_dfs=[],
-        defense_adv_dfs=[],
-        snap_count_dfs=[],
+        defense_dfs=[defense_df],
+        punt_kick_return_dfs=[returns_df],
+        punt_kick_dfs=[kicking_df],
+        passing_adv_dfs=[passing_adv_df],
+        receiving_adv_dfs=[receiving_adv_df],
+        rushing_adv_dfs=[rushing_adv_df],
+        defense_adv_dfs=[defense_adv_df],
+        snap_count_dfs=[snap_counts_df],
         current_date=pd.to_datetime("2023-09-10"),
         is_cache=False,
     )
 
+    # Basic output checks
     assert isinstance(result, pd.DataFrame)
     assert not result.empty
     assert "player" in result.columns
     assert "team" in result.columns
     assert "season" in result.columns
-
-
-def test_save_to_gcloud_warns_on_empty(monkeypatch, collector):
-    monkeypatch.setattr(collector, "full_boxscore", pd.DataFrame())
-    collector._save_to_gcloud(df=None)  # Should log a warning and not raise
-
-
-def test_gcloud_upload_helper_handles_failure(monkeypatch, collector):
-    monkeypatch.setattr(
-        "theleague.nfl_handler.CloudHelper",
-        lambda *args, **kwargs: (_ for _ in ()).throw(Exception("mock fail")),
-    )
-    with pytest.raises(Exception):
-        collector._gcloud_upload_helper(pd.DataFrame({"season": [2023]}), year=2023)

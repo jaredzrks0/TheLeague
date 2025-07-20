@@ -128,56 +128,42 @@ class NFLDailyStatsCollector:
                     basic_defense = self._fetch_commented_table(
                         "player_defense", "Player", PLAYER_DEFENSE_RENAMING_DICT
                     )
-                    basic_defense["date"] = self.str_date
-                    basic_defense["week"] = self.week
                     all_cleaned_basic_defense_dfs.append(basic_defense)
 
                     # Punt and kick returns
                     punt_kick_returns = self._fetch_commented_table(
                         "returns", "Player", PUNT_KICK_RETURNS_RENAMING_DICT
                     )
-                    punt_kick_returns["date"] = self.str_date
-                    punt_kick_returns["week"] = self.week
                     all_cleaned_punt_kick_returns_dfs.append(punt_kick_returns)
 
                     # Punts and kicks
                     punts_kicks = self._fetch_commented_table(
                         "kicking", "Player", PUNT_KICK_RENAMING_DICT
                     )
-                    punts_kicks["date"] = self.str_date
-                    punts_kicks["week"] = self.week
                     all_cleaned_punt_kick_dfs.append(punts_kicks)
 
                     # Advanced passing
                     passing_advanced = self._fetch_commented_table(
                         "passing_advanced", "Player", PASSING_ADVANCED_RENAMING_DICT
                     )
-                    passing_advanced["date"] = self.str_date
-                    passing_advanced["week"] = self.week
                     all_cleaned_passing_advanced_dfs.append(passing_advanced)
 
                     # Advanced receiving
                     receiving_advanced = self._fetch_commented_table(
                         "receiving_advanced", "Player", RECEIVING_ADVANCED_RENAMING_DICT
                     )
-                    receiving_advanced["date"] = self.str_date
-                    receiving_advanced["week"] = self.week
                     all_cleaned_receiving_advanced_dfs.append(receiving_advanced)
 
                     # Advanced rushing
                     rushing_advanced = self._fetch_commented_table(
                         "rushing_advanced", "Player", RUSHING_ADVANCED_RENAMING_DICT
                     )
-                    rushing_advanced["date"] = self.str_date
-                    rushing_advanced["week"] = self.week
                     all_cleaned_rushing_advanced_dfs.append(rushing_advanced)
 
                     # Advanced Defense
                     defense_advanced = self._fetch_commented_table(
                         "defense_advanced", "Player", DEFENSE_ADVANCED_RENAMING_DICT
                     )
-                    defense_advanced["date"] = self.str_date
-                    defense_advanced["week"] = self.week
                     all_cleaned_defense_advanced_dfs.append(defense_advanced)
 
                     # Snap Counts
@@ -185,15 +171,11 @@ class NFLDailyStatsCollector:
                         "home_snap_counts", "Player", SNAP_COUNT_RENAMING_DICT
                     )
                     home_snap_counts["team"] = self.home_team
-                    home_snap_counts["date"] = self.str_date
-                    home_snap_counts["week"] = self.week
 
                     away_snap_counts = self._fetch_commented_table(
                         "vis_snap_counts", "Player", SNAP_COUNT_RENAMING_DICT
                     )
                     away_snap_counts["team"] = self.away_team
-                    away_snap_counts["date"] = self.str_date
-                    away_snap_counts["week"] = self.week
 
                     all_cleaned_snap_counts.append(home_snap_counts)
                     all_cleaned_snap_counts.append(away_snap_counts)
@@ -277,74 +259,28 @@ class NFLDailyStatsCollector:
             self.logger.info(f"Processing {len(offensive_dfs)} offensive records...")
 
             # Concatenate and rename offensive data
-            offensive_boxscores = pd.concat(offensive_dfs).rename(
-                columns=OFFENSIVE_RENAMING_DICT
-            )
+            offensive_boxscores = pd.concat(offensive_dfs)
 
-            # Process other data types
-            fg_boxscores = (
-                pd.concat(fg_dfs).rename(columns={"kicker": "player"})
-                if fg_dfs
-                else pd.DataFrame()
-            )
-            basic_defense_boxscores = (
-                pd.concat(defense_dfs) if defense_dfs else pd.DataFrame()
-            )
-            punt_kick_return_boxscores = (
-                pd.concat(punt_kick_return_dfs)
-                if punt_kick_return_dfs
-                else pd.DataFrame()
-            )
-            punts_kicks_boxscores = (
-                pd.concat(punt_kick_dfs) if punt_kick_dfs else pd.DataFrame()
-            )
+            # Process boxscores
+            fg_boxscores = self._concat_and_drop(fg_dfs)
+            basic_defense_boxscores = self._concat_and_drop(defense_dfs)
+            punt_kick_return_boxscores = self._concat_and_drop(punt_kick_return_dfs)
+            punts_kicks_boxscores = self._concat_and_drop(punt_kick_dfs)
 
-            # Process advanced stats with column dropping
-            passing_advanced_boxscores = (
-                pd.concat(passing_adv_dfs) if passing_adv_dfs else pd.DataFrame()
+            # Advanced stats with column dropping
+            passing_advanced_boxscores = self._concat_and_drop(
+                passing_adv_dfs, drop_cols=["Cmp", "Att", "Yds"]
             )
-            if not passing_advanced_boxscores.empty:
-                passing_advanced_boxscores = passing_advanced_boxscores.drop(
-                    columns=["Cmp", "Att", "Yds"], errors="ignore"
-                )
-
-            receiving_advanced_boxscores = (
-                pd.concat(receiving_adv_dfs) if receiving_adv_dfs else pd.DataFrame()
+            receiving_advanced_boxscores = self._concat_and_drop(
+                receiving_adv_dfs, drop_cols=["Tgt", "Rec", "Yds", "TD"]
             )
-            if not receiving_advanced_boxscores.empty:
-                receiving_advanced_boxscores = receiving_advanced_boxscores.drop(
-                    columns=["Tgt", "Rec", "Yds", "TD"], errors="ignore"
-                )
-
-            rushing_advanced_boxscores = (
-                pd.concat(rushing_adv_dfs) if rushing_adv_dfs else pd.DataFrame()
+            rushing_advanced_boxscores = self._concat_and_drop(
+                rushing_adv_dfs, drop_cols=["Att", "Yds", "TD"]
             )
-            if not rushing_advanced_boxscores.empty:
-                rushing_advanced_boxscores = rushing_advanced_boxscores.drop(
-                    columns=["Att", "Yds", "TD"], errors="ignore"
-                )
-
-            defense_advanced_boxscores = (
-                pd.concat(defense_adv_dfs) if defense_adv_dfs else pd.DataFrame()
+            defense_advanced_boxscores = self._concat_and_drop(
+                defense_adv_dfs, drop_cols=["Int", "Yds", "TD", "Sk"]
             )
-            if not defense_advanced_boxscores.empty:
-                defense_advanced_boxscores = defense_advanced_boxscores.drop(
-                    columns=["Int", "Yds", "TD", "Sk"], errors="ignore"
-                )
-
-            snap_count_boxscores = (
-                pd.concat(snap_count_dfs) if snap_count_dfs else pd.DataFrame()
-            )
-
-            # Merge FG with snap counts if both exist
-            if not fg_boxscores.empty and not snap_count_boxscores.empty:
-                fg_boxscores = pd.merge(
-                    fg_boxscores,
-                    snap_count_boxscores[["player_id", "team"]],
-                    on="player_id",
-                    how="left",
-                )
-                self.logger.debug("Merged FG data with snap counts")
+            snap_count_boxscores = self._concat_and_drop(snap_count_dfs)
 
             # Collect all dataframes for merging
             dfs_to_merge = [
@@ -438,6 +374,12 @@ class NFLDailyStatsCollector:
             else:
                 self.logger.error(error_msg)
                 raise
+
+    def _concat_and_drop(self, dfs, drop_cols=None):
+        df = pd.concat(dfs) if dfs else pd.DataFrame()
+        if drop_cols and not df.empty:
+            df = df.drop(columns=drop_cols, errors="ignore")
+        return df
 
     def _get_boxscore_urls_for_date(self, date):
         # Ensure the given date is in a compatable date format and grab the year
@@ -585,6 +527,7 @@ class NFLDailyStatsCollector:
                 "count": "num_fg_made",
                 "sum": "total_made_fg_distance",
                 "Tm": "team",
+                "kicker": "player",
             }
         )
 
@@ -633,6 +576,10 @@ class NFLDailyStatsCollector:
 
         # Add the source URL
         table["source_url"] = self.url
+
+        # Add the date and week to the table
+        table["date"] = self.str_date
+        table["week"] = self.week
 
         self.logger.debug(f"Processed {table_id} table: {table.shape[0]} records")
 
