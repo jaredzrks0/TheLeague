@@ -11,6 +11,11 @@ from multimodal_communication import CloudHelper
 from functools import reduce
 import warnings
 import logging
+import os
+from dotenv import load_dotenv
+
+from theleague.pydantic_models.utilities import pydantic_convert_and_validate
+from theleague.pydantic_models.nfl_model import NFLBoxscore
 from theleague.constants.nfl_constants import (
     OFFENSIVE_COLUMNS_LIST,
     OFFENSIVE_RENAMING_DICT,
@@ -24,6 +29,9 @@ from theleague.constants.nfl_constants import (
     DEFENSE_ADVANCED_RENAMING_DICT,
     SNAP_COUNT_RENAMING_DICT,
 )
+
+load_dotenv()
+GCLOUD_PROJECT_ID = os.getenv("GCLOUD_PROJECT_ID")
 
 
 class NFLDailyStatsCollector:
@@ -336,7 +344,16 @@ class NFLDailyStatsCollector:
                 lambda left, right: pd.merge(
                     left,
                     right,
-                    on=["player_id", "player", "team", "date", "week"],
+                    on=[
+                        "player_id",
+                        "player",
+                        "team",
+                        "date",
+                        "week",
+                        "home_team",
+                        "away_team",
+                        "home_away",
+                    ],
                     how="outer",
                 ),
                 dfs_wo_source_url,
@@ -376,6 +393,9 @@ class NFLDailyStatsCollector:
                 identifier_cols
                 + [col for col in merged.columns if col not in identifier_cols]
             ].drop(columns=["index"])
+
+            # Convert to pydantic model and validate data
+            merged = pydantic_convert_and_validate(df=merged, model=NFLBoxscore)
 
             self.logger.info(f"Final merged dataset shape: {merged.shape}")
 
@@ -445,8 +465,10 @@ class NFLDailyStatsCollector:
         return relevant_suffixes, relevant_weeks
 
     def _fetch_commented_tables(self, url: str) -> None:
-        scraped_html = requests.get(url)
-        soup = BeautifulSoup(scraped_html.content, "html.parser")
+        self.driver.get(url)
+        time.sleep(6)
+        scraped_html = self.driver.page_source
+        soup = BeautifulSoup(scraped_html, "html.parser")
 
         # Get all html comments, then filter out everything that isn't a table
         comments = soup.find_all(string=lambda text: isinstance(text, Comment))
@@ -473,10 +495,14 @@ class NFLDailyStatsCollector:
 
     def _fetch_offensive_boxscore(self, url):
         self.driver.get(url)
-        time.sleep(3)
-        html = self.driver.page_source
-        self.all_tables = pd.read_html(StringIO(str(html)), extract_links="body")
-        main_table = self.all_tables[2]
+        time.sleep(6)
+        self.main_html = self.driver.page_source
+        self.main_soup = BeautifulSoup(self.main_html, "html.parser")
+        offensive_player_html = self.main_soup.find("table", {"id": "player_offense"})
+        # self.all_tables = pd.read_html(StringIO(str(html)), extract_links="body")
+        main_table = pd.read_html(
+            StringIO(str(offensive_player_html)), extract_links="body"
+        )[0]
         main_table.columns = main_table.columns.droplevel(0)
 
         # Break apart the player ids from the embedded player page links
@@ -522,7 +548,9 @@ class NFLDailyStatsCollector:
         return main_table
 
     def _fetch_fg_boxscore(self):
-        fg_boxscore = self.all_tables[1]
+        fg_html = self.main_soup.find("table", {"id": "scoring"})
+        # self.all_tables = pd.read_html(StringIO(str(html)), extract_links="body")
+        fg_boxscore = pd.read_html(StringIO(str(fg_html)), extract_links="body")[0]
 
         # Break apart the player ids from the embedded player page links
         fg_boxscore = self._extract_ids(fg_boxscore, "Detail")
@@ -539,7 +567,9 @@ class NFLDailyStatsCollector:
             lambda x: (x.split("yard")[0].split(" ")[-2])
         )
 
-        fg_boxscore["Quarter"] = fg_boxscore["Quarter"].replace("", np.nan)
+        fg_boxscore["Quarter"] = (
+            fg_boxscore["Quarter"].replace("", np.nan).infer_objects(copy=False)
+        )
         fg_boxscore["Quarter"] = fg_boxscore["Quarter"].ffill()
         fg_boxscore = fg_boxscore[["player_id", "kicker", "distance", "Tm"]]
         fg_boxscore["distance"] = pd.to_numeric(
@@ -556,7 +586,7 @@ class NFLDailyStatsCollector:
                 kicking_field_goals_made_average_distance=(
                     "distance",
                     "mean",
-                ),  # optional
+                ),
             )
             .reset_index()
         )
@@ -572,6 +602,15 @@ class NFLDailyStatsCollector:
 
         # Add the source URL
         fg_agg["source_url"] = self.url
+
+        # Add the home_away info
+        fg_agg["home_team"] = self.home_team
+        fg_agg["away_team"] = self.away_team
+
+        # Add a home_away column
+        fg_agg["home_away"] = fg_agg.apply(
+            lambda x: "H" if x.team == x.home_team else "A", axis=1
+        )
 
         self.logger.debug(f"Processed FG data: {fg_agg.shape[0]} kickers")
 
@@ -614,6 +653,17 @@ class NFLDailyStatsCollector:
         table["date"] = self.str_date
         table["week"] = self.week
 
+        # Add a home_away column
+        table["home_team"] = self.home_team
+        table["away_team"] = self.away_team
+
+        if "snap_count" not in table_id:
+            table["home_away"] = table.apply(
+                lambda x: "H" if x.team == x.home_team else "A", axis=1
+            )
+        else:
+            table["home_away"] = "H" if table_id == "home_snap_counts" else "A"
+
         self.logger.debug(f"Processed {table_id} table: {table.shape[0]} records")
 
         return table
@@ -640,7 +690,7 @@ class NFLDailyStatsCollector:
     def _gcloud_upload_helper(self, df, year):
         try:
             self.logger.debug(f"Downloading existing data for {year}")
-            downloader = CloudHelper()
+            downloader = CloudHelper(project_id=GCLOUD_PROJECT_ID)
             download = downloader.download_from_cloud(
                 f"nfl-data-collection/boxscores_{year}.parquet"
             )
@@ -663,7 +713,7 @@ class NFLDailyStatsCollector:
                 f"Final dataset for {year}: {self.boxscores_df.shape[0]} records"
             )
 
-            uploader = CloudHelper(self.boxscores_df)
+            uploader = CloudHelper(project_id=GCLOUD_PROJECT_ID, obj=self.boxscores_df)
             uploader.upload_to_cloud(
                 bucket_name="nfl-data-collection", file_name=f"boxscores_{year}.parquet"
             )
