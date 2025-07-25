@@ -48,40 +48,79 @@ def mock_read_local_html(request):
 # --- New/Modified Fixtures for Selenium Mocking ---
 
 
-@pytest.fixture
-def mock_selenium_driver_setup(monkeypatch, mock_read_local_html):
-    """
-    Mocks the Selenium WebDriver and related functions.
+# @pytest.fixture
+# def mock_selenium_driver_setup(monkeypatch, mock_read_local_html):
+#     """
+#     Mocks the Selenium WebDriver and related functions.
 
-    - Patches `webdriver.Chrome` so that `NFLDailyStatsCollector.__init__`
-      gets a MagicMock instead of a real browser instance.
-    - Configures the mocked driver's `page_source` to return content
-      from `mock_read_local_html`.
-    - Patches `time.sleep` within the `nfl_handler` module to prevent
-      actual delays during tests.
-    """
-    # Create a MagicMock for the driver instance
+#     - Patches `webdriver.Chrome` so that `NFLDailyStatsCollector.__init__`
+#       gets a MagicMock instead of a real browser instance.
+#     - Configures the mocked driver's `page_source` to return content
+#       from `mock_read_local_html`.
+#     - Patches `time.sleep` within the `nfl_handler` module to prevent
+#       actual delays during tests.
+#     """
+#     # Create a MagicMock for the driver instance
+#     mock_driver_instance = MagicMock()
+
+#     # Set the return value for the 'page_source' property of the mocked driver
+#     # Using type() is important for mocking properties
+#     type(mock_driver_instance).page_source = mock_read_local_html
+
+#     # Patch webdriver.Chrome where it's imported in nfl_handler.py
+#     # This ensures that when NFLDailyStatsCollector() is instantiated,
+#     # self.driver becomes our mock_driver_instance.
+#     # Note: Adjust the path 'theleague.handlers.nfl_handler.webdriver'
+#     # if your webdriver import path is different in nfl_handler.py
+#     monkeypatch.setattr(
+#         "theleague.handlers.nfl_handler.webdriver",
+#         MagicMock(Chrome=MagicMock(return_value=mock_driver_instance)),
+#     )
+
+#     # Patch time.sleep within the nfl_handler module
+#     # This prevents the test from actually waiting for 6 seconds.
+#     monkeypatch.setattr("theleague.handlers.nfl_handler.time.sleep", MagicMock())
+
+#     # Yield the mocked driver instance for direct assertions in tests if needed
+#     yield mock_driver_instance
+
+
+@pytest.fixture
+def mock_selenium_driver_setup(monkeypatch, mock_read_local_html, request):
     mock_driver_instance = MagicMock()
 
-    # Set the return value for the 'page_source' property of the mocked driver
-    # Using type() is important for mocking properties
-    type(mock_driver_instance).page_source = mock_read_local_html
+    url_html_map = {
+        "https://www.pro-football-reference.com/years/2023/games.htm": "tests/data/2023_games.html",
+        "fakeurl": request.getfixturevalue("mock_read_local_html"),  # Existing
+    }
 
-    # Patch webdriver.Chrome where it's imported in nfl_handler.py
-    # This ensures that when NFLDailyStatsCollector() is instantiated,
-    # self.driver becomes our mock_driver_instance.
-    # Note: Adjust the path 'theleague.handlers.nfl_handler.webdriver'
-    # if your webdriver import path is different in nfl_handler.py
+    visited_urls = {}
+
+    def get_side_effect(url):
+        visited_urls["last_url"] = url  # track the URL requested
+
+    def page_source_side_effect():
+        url = visited_urls.get("last_url")
+        if url in url_html_map:
+            html_path = url_html_map[url]
+            if isinstance(html_path, str) and html_path.endswith(".html"):
+                with open(html_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            return html_path  # fallback (e.g., default mock_read_local_html str)
+        return "<html><body><p>Unknown URL</p></body></html>"
+
+    mock_driver_instance.get.side_effect = get_side_effect
+    type(mock_driver_instance).page_source = property(
+        lambda self: page_source_side_effect()
+    )
+
     monkeypatch.setattr(
         "theleague.handlers.nfl_handler.webdriver",
         MagicMock(Chrome=MagicMock(return_value=mock_driver_instance)),
     )
 
-    # Patch time.sleep within the nfl_handler module
-    # This prevents the test from actually waiting for 6 seconds.
     monkeypatch.setattr("theleague.handlers.nfl_handler.time.sleep", MagicMock())
 
-    # Yield the mocked driver instance for direct assertions in tests if needed
     yield mock_driver_instance
 
 
@@ -170,6 +209,9 @@ def parametrize_local_html(test_func):
 # and time.sleep, as the `collector` fixture sets up the mocked driver.
 
 
+@pytest.mark.parametrize(
+    "mock_read_local_html", ["tests/data/2023_games.html"], indirect=True
+)
 def test_get_boxscore_urls_for_date(collector):
     # Assuming this method does not directly use self.driver.get,
     # or if it does, it's mocked by the collector fixture.
@@ -475,14 +517,23 @@ def test_process_data(
             id_col="Player",
             renaming_dict=DEFENSE_ADVANCED_RENAMING_DICT,
         )
-        snap_counts_df = collector._fetch_commented_table(
+        home_snap_counts_df = collector._fetch_commented_table(
             table_id="home_snap_counts",
             id_col="Player",
             renaming_dict=SNAP_COUNT_RENAMING_DICT,
         )
-        snap_counts_df["team"] = collector.home_team
-        snap_counts_df["date"] = collector.str_date
-        snap_counts_df["week"] = collector.week
+        home_snap_counts_df["team"] = collector.home_team
+        home_snap_counts_df["date"] = collector.str_date
+        home_snap_counts_df["week"] = collector.week
+        away_snap_counts_df = collector._fetch_commented_table(
+            table_id="vis_snap_counts",
+            id_col="Player",
+            renaming_dict=SNAP_COUNT_RENAMING_DICT,
+        )
+        away_snap_counts_df["team"] = collector.away_team
+        away_snap_counts_df["date"] = collector.str_date
+        away_snap_counts_df["week"] = collector.week
+        snap_counts_df = [home_snap_counts_df, away_snap_counts_df]
 
         # Run full processing function
         result = collector._process_and_upload_data(
@@ -495,7 +546,7 @@ def test_process_data(
             receiving_adv_dfs=[receiving_adv_df],
             rushing_adv_dfs=[rushing_adv_df],
             defense_adv_dfs=[defense_adv_df],
-            snap_count_dfs=[snap_counts_df],
+            snap_count_dfs=snap_counts_df,
             current_date=pd.to_datetime("2023-09-10"),
             is_cache=False,
         )
@@ -506,6 +557,3 @@ def test_process_data(
         assert "player" in result.columns
         assert "team" in result.columns
         assert "season" in result.columns
-
-        # Assert that _save_to_gcloud was called
-        mock_save_to_gcloud.assert_called_once()

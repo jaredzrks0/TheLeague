@@ -394,6 +394,46 @@ class NFLDailyStatsCollector:
                 + [col for col in merged.columns if col not in identifier_cols]
             ].drop(columns=["index"])
 
+            # Condense the kicking columns
+            merged["position"] = merged.position_y.combine_first(merged.position_x)
+            merged = merged.drop(columns=["position_x", "position_y"])
+
+            # And condense the kicking rows
+            # Define which columns identify a "duplicate row"
+            key_cols = [
+                "player",
+                "player_id",
+                "team",
+                "date",
+                "week",
+                "season",
+                "source_url",
+            ]
+
+            def combine_duplicate_rows(group):
+                # Combine rows by taking the first non-null value in each column
+                return group.ffill().bfill().iloc[0]
+
+            # Your key columns — be sure these are exactly the same for both rows
+            key_cols = [
+                "player",
+                "player_id",
+                "date",
+                "week",
+                "season",
+                "home_team",
+                "away_team",
+                "source_url",
+            ]
+
+            # Sort and apply combine
+            merged = (
+                merged.sort_values(key_cols)  # Ensure grouping is in order
+                .groupby(key_cols, dropna=False, as_index=False)
+                .apply(combine_duplicate_rows)
+                .reset_index(drop=True)
+            )
+
             # Convert to pydantic model and validate data
             merged = pydantic_convert_and_validate(df=merged, model=NFLBoxscore)
 
@@ -445,8 +485,11 @@ class NFLDailyStatsCollector:
 
         self.driver.get(games_url)
         time.sleep(3)
-        games_html = self.driver.page_source
-        games_table = pd.read_html(StringIO(str(games_html)), extract_links="body")[0]
+        games_html = BeautifulSoup(self.driver.page_source)
+        games_table_html = games_html.find("table", {"id": "games"})
+        games_table = pd.read_html(
+            StringIO(str(games_table_html)), extract_links="body"
+        )[0]
 
         # Compile the dates and suffixes from the full season for later date filtering
         games_table["dates"] = games_table["Date"].apply(lambda x: x[0])
@@ -606,6 +649,9 @@ class NFLDailyStatsCollector:
         # Add the home_away info
         fg_agg["home_team"] = self.home_team
         fg_agg["away_team"] = self.away_team
+
+        # Add the positions
+        fg_agg["position"] = "K"
 
         # Add a home_away column
         fg_agg["home_away"] = fg_agg.apply(
