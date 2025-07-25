@@ -407,13 +407,3 @@ class NFLBoxscore(BaseModel):
             )
             for k, v in values.items()
         }
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def nan_and_inf_to_none(cls, values):
-    #     """Convert NaN to None for acceptance by float, int parameters"""
-    #     # values is a dict of all input fields
-    #     for k, v in values.items():
-    #         if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-    #             values[k] = None
-    #     return values
