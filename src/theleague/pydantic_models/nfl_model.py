@@ -19,7 +19,9 @@ class NFLBoxscore(BaseModel):
     )
     team: str = Field(None, description="The player's team for the game.")
     date: datetime.date = Field(None, description="Date of the game.")
-    week: int = Field(None, description="Week number of the season.")
+    week: str = Field(
+        None, description="Week number of the season. (with txt for playoffs)"
+    )
     season: int = Field(None, description="Year of the season.")
     home_away: str = Field(
         None, description="Indicates if the game was 'home' or 'away'."

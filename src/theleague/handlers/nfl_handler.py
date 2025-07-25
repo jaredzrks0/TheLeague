@@ -14,7 +14,7 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from theleague.pydantic_models.utilities import pydantic_convert_and_validate
+from theleague.utilities import pydantic_convert_and_validate, enforce_schema
 from theleague.pydantic_models.nfl_model import NFLBoxscore
 from theleague.constants.nfl_constants import (
     OFFENSIVE_COLUMNS_LIST,
@@ -29,6 +29,7 @@ from theleague.constants.nfl_constants import (
     DEFENSE_ADVANCED_RENAMING_DICT,
     SNAP_COUNT_RENAMING_DICT,
 )
+from theleague.constants.schemas import NFL_SCHEMA
 
 load_dotenv()
 GCLOUD_PROJECT_ID = os.getenv("GCLOUD_PROJECT_ID")
@@ -437,6 +438,9 @@ class NFLDailyStatsCollector:
             # Convert to pydantic model and validate data
             merged = pydantic_convert_and_validate(df=merged, model=NFLBoxscore)
 
+            # Enforce the schema (without nulls) before uploading
+            merged = enforce_schema(merged, schema=NFL_SCHEMA)
+
             self.logger.info(f"Final merged dataset shape: {merged.shape}")
 
             # Save to cloud if requested
@@ -485,7 +489,7 @@ class NFLDailyStatsCollector:
 
         self.driver.get(games_url)
         time.sleep(3)
-        games_html = BeautifulSoup(self.driver.page_source)
+        games_html = BeautifulSoup(self.driver.page_source, "html.parser")
         games_table_html = games_html.find("table", {"id": "games"})
         games_table = pd.read_html(
             StringIO(str(games_table_html)), extract_links="body"
@@ -752,7 +756,7 @@ class NFLDailyStatsCollector:
                 self.logger.debug("No existing data found")
 
             self.boxscores_df = pd.concat([download, df]).drop_duplicates(
-                subset=["player_id", "source_url"]
+                subset=["player_id", "source_url"], keep="last"
             )
 
             self.logger.info(
