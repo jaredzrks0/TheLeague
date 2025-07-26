@@ -1,8 +1,22 @@
 import pandas as pd
 import numpy as np
+import datetime
+from datetime import datetime as dt
 from pydantic import BaseModel
 
 
+########## SEASON CALCULATIONS ##########
+def calculate_nfl_season(date: str | dt) -> int:
+    if type(date) is str:
+        date = dt.strptime(date, "%Y-%m-%d")
+
+    if date.month < 8:
+        return date.year - 1
+    else:
+        return date
+
+
+########## DATA ENFORCEMENT ##########
 def pydantic_convert_and_validate(df: pd.DataFrame, model: BaseModel) -> pd.DataFrame:
     """
     Cleans a Boxscore DataFrame by converting to a

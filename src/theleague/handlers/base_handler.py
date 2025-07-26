@@ -2,34 +2,119 @@ import os
 import requests
 
 from dotenv import load_dotenv
+from typing import Any
+from multimodal_communication import CloudHelper
+from theleague.utilities import calculate_nfl_season
+
+
+class MissingParameterError(AttributeError):
+    pass
 
 
 class BaseHandler:
     API_KEY: str
+    GCLOUD_PREFIX: str
 
     def __init__(self):
         # Load in the API Key
         load_dotenv()
         self.API_KEY = os.getenv("SPORTS_GAME_ODDS_API")
+        self.GCLOUD_PROJECT_ID = os.getenv("GCLOUD_PROJECT_ID")
+        self.GCLOUD_PREFIX = "jzirk"
 
-    def check_remaining_daily_requests(self):
+    def check_remaining_requests(self):
         """Checks the number of requests completed for the month and compares to the allowance"""
 
-        # Hit the API to check current daily requests used
+        # Build the request pieces
         url = "https://api.sportsgameodds.com/v2/account/usage"
-        headers = {
-        "X-Api-Key": self.API_KEY
-        }
+        headers = {"X-Api-Key": self.API_KEY}
 
+        # Hit the API to check current daily requests used
         response = requests.get(url, headers=headers)
 
+        # Validate response and calculate usage metrics
         if response.status_code == 200:
             usage_data = response.json()
-            entity_usage_data = usage_data['data']['rateLimits']['per-month']
-            max_entities, current_entities = entity_usage_data['max-entities'], entity_usage_data['current-entities']
-
+            entity_usage_data = usage_data["data"]["rateLimits"]["per-month"]
+            max_entities, current_entities = (
+                entity_usage_data["max-entities"],
+                entity_usage_data["current-entities"],
+            )
 
         # Compare to the user defined daily allowance and
         print(
             f"Total Requested Monthy Entities: {current_entities:,} --- Total Remaining Monthly Entities: {max_entities - current_entities:,}"
         )
+
+    def make_get_request(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        save_json: bool = True,
+    ):
+        # Define the base of the GET request
+        self._create_request_base(endpoint)
+
+        # Add any params
+        self._add_request_parameters(parameters=params)
+
+        # Ensure we have an ID for saving
+        if "sportID" not in self.params or (
+            endpoint != "leagues" and "leagueID" not in self.params
+        ):
+            raise MissingParameterError(
+                "sportID must always be included, and leagueID is required unless the endpoint is 'leagues'."
+            )
+
+        try:
+            response = requests.get(self.URL, params=self.params)
+            response.raise_for_status()  # Raises HTTPError for bad status codes (4xx, 5xx)
+            data = response.json()  # May raise ValueError if response is not valid JSON
+        except requests.exceptions.HTTPError as http_err:
+            raise RuntimeError(
+                f"HTTP error occurred: {http_err} - URL: {response.url}"
+            ) from http_err
+        except requests.exceptions.RequestException as req_err:
+            raise RuntimeError(f"Request failed: {req_err}") from req_err
+        except ValueError as json_err:
+            raise RuntimeError("Invalid JSON in response") from json_err
+
+        # Save the json in gcloud if needed
+        if save_json:
+            self._gcloud_save_fetch(endpoint=endpoint, data=data)
+
+        return data
+
+    def _create_request_base(self, endpoint: str, version: str = "v2") -> None:
+        """Creates the paramer-less (other than the API) url and param_dict for an API request given an endpoint."""
+        self.URL = f"https://api.sportsgameodds.com/{version}/{endpoint}/"
+        self.params = {"apiKey": self.API_KEY}
+
+    def _add_request_parameters(self, parameters: dict[str, Any]) -> None:
+        if not hasattr(self, "params"):
+            raise AttributeError(
+                "Handler must have parameters attribute set. Ensure self._create_request_base has been called"
+            )
+        if parameters:
+            self.params = self.params | parameters
+
+    def _gcloud_save_fetch(self, endpoint, data):
+        uploader = CloudHelper(project_id=self.GCLOUD_PROJECT_ID, obj=data)
+
+        # Grab the ID information
+        sport = self.params["sportID"]
+
+        # Build the uploader
+        if endpoint != "leagues":
+            league = self.params["leagueID"]
+
+            uploader.upload_to_cloud(
+                bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
+                file_name=f"sport={sport}/league={league}/endpoint={endpoint}/start_date={self.start_date}&end_date={self.end_date}.json",
+            )
+        else:
+            season = calculate_nfl_season(self.start_date)
+            uploader.upload_to_cloud(
+                bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
+                file_name=f"sport={sport}/endpoint={endpoint}/season={season}/leagues.json",
+            )
