@@ -52,6 +52,9 @@ class NFLHandler(BaseHandler):
 if __name__ == "__main__":
     handler = NFLHandler()
 
-    handler.fetch_teams()
+    handler.fetch_leagues(max_entities=2)
+    handler.fetch_teams(max_entities=3)
+
+    handler.check_remaining_requests()
 
     x = 1

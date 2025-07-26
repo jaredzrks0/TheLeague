@@ -1,5 +1,6 @@
 import os
 import requests
+import json
 
 from dotenv import load_dotenv
 from typing import Any
@@ -70,6 +71,7 @@ class BaseHandler:
             response = requests.get(self.URL, params=self.params)
             response.raise_for_status()  # Raises HTTPError for bad status codes (4xx, 5xx)
             data = response.json()  # May raise ValueError if response is not valid JSON
+
         except requests.exceptions.HTTPError as http_err:
             raise RuntimeError(
                 f"HTTP error occurred: {http_err} - URL: {response.url}"
@@ -105,16 +107,22 @@ class BaseHandler:
         sport = self.params["sportID"]
 
         # Build the uploader
-        if endpoint != "leagues":
-            league = self.params["leagueID"]
-
-            uploader.upload_to_cloud(
-                bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
-                file_name=f"sport={sport}/league={league}/endpoint={endpoint}/start_date={self.start_date}&end_date={self.end_date}.json",
-            )
-        else:
+        if endpoint == "leagues":
             season = calculate_nfl_season(self.start_date)
             uploader.upload_to_cloud(
                 bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
                 file_name=f"sport={sport}/endpoint={endpoint}/season={season}/leagues.json",
+            )
+        elif endpoint == "teams":
+            league = self.params["leagueID"]
+            season = calculate_nfl_season(self.start_date)
+            uploader.upload_to_cloud(
+                bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
+                file_name=f"sport={sport}/endpoint={endpoint}/league={league}/season={season}/teams.json",
+            )
+        else:
+            league = self.params["leagueID"]
+            uploader.upload_to_cloud(
+                bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
+                file_name=f"sport={sport}/endpoint={endpoint}/league={league}/start_date={self.start_date}&end_date={self.end_date}.json",
             )
