@@ -1,10 +1,13 @@
 import requests
 import datetime
 from datetime import datetime as dt
+from typing import Any, Type
+from pydantic import BaseModel
 
 import polars as pl
 
 from theleague.handlers.base_handler import BaseHandler
+from theleague.pydantic_models.leagues_model import LeagueResponse
 
 
 class NFLHandler(BaseHandler):
@@ -34,26 +37,17 @@ class NFLHandler(BaseHandler):
         if not end_date:
             self.end_date = self.start_date
 
-    def fetch_leagues(self, max_entities: int = 100, save_json: bool = True):
-        params = {"sportID": self.sport_id, "limit": max_entities}
-        self.league_data = self.make_get_request(
-            endpoint="leagues", params=params, save_json=save_json
-        )
-
-    def fetch_teams(
-        self, leagueID: str = "NFL", max_entities: int = 100, save_json: bool = True
-    ):
-        params = {"sportID": self.sport_id, "leagueID": leagueID, "limit": max_entities}
-        self.teams_data = self.make_get_request(
-            endpoint="teams", params=params, save_json=save_json
-        )
+    def fit_response_to_pydantic(
+        self, json_response: dict[str, Any], pydantic_model: Type[BaseModel]
+    ) -> type[BaseModel]:
+        return pydantic_model(**json_response)
 
 
 if __name__ == "__main__":
     handler = NFLHandler()
 
-    handler.fetch_leagues(max_entities=2)
-    handler.fetch_teams(max_entities=3)
+    handler.fetch_leagues(max_entities=10)
+    handler.fetch_teams(max_entities=10)
 
     handler.check_remaining_requests()
 

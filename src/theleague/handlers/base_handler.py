@@ -126,3 +126,18 @@ class BaseHandler:
                 bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
                 file_name=f"sport={sport}/endpoint={endpoint}/league={league}/start_date={self.start_date}&end_date={self.end_date}.json",
             )
+
+    ########## COMMON FETCHES ##########
+    def fetch_leagues(self, max_entities: int = 100, save_json: bool = True):
+        params = {"sportID": self.sport_id, "limit": max_entities}
+        self.league_data = self.make_get_request(
+            endpoint="leagues", params=params, save_json=save_json
+        )
+
+    def fetch_teams(
+        self, leagueID: str = "NFL", max_entities: int = 100, save_json: bool = True
+    ) -> None:
+        params = {"sportID": self.sport_id, "leagueID": leagueID, "limit": max_entities}
+        self.teams_data = self.make_get_request(
+            endpoint="teams", params=params, save_json=save_json
+        )
