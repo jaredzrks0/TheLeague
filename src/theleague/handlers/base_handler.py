@@ -2,10 +2,15 @@ import os
 import requests
 import json
 
+import polars as pl
+
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, Type
+from pydantic import BaseModel
 from multimodal_communication import CloudHelper
-from theleague.utilities import calculate_nfl_season
+from theleague.utilities import calculate_nfl_season, pydantic_convert_and_validate
+from theleague.pydantic_models.response_models.league_response import LeagueResponse
+from theleague.pydantic_models.processing_models.leagues import LeaguesDataFrame
 
 
 class MissingParameterError(AttributeError):
@@ -109,16 +114,23 @@ class BaseHandler:
         # Build the uploader
         if endpoint == "leagues":
             season = calculate_nfl_season(self.start_date)
+            self.leagues_gcloud_path = (
+                f"sport={sport}/endpoint={endpoint}/season={season}/leagues.json"
+            )
+
             uploader.upload_to_cloud(
                 bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
-                file_name=f"sport={sport}/endpoint={endpoint}/season={season}/leagues.json",
+                file_name=self.leagues_gcloud_path,
             )
+
         elif endpoint == "teams":
             league = self.params["leagueID"]
             season = calculate_nfl_season(self.start_date)
+            self.teams_gcloud_path = f"sport={sport}/endpoint={endpoint}/league={league}/season={season}/teams.json"
+
             uploader.upload_to_cloud(
                 bucket_name=f"{self.GCLOUD_PREFIX}-raw-json",
-                file_name=f"sport={sport}/endpoint={endpoint}/league={league}/season={season}/teams.json",
+                file_name=self.teams_gcloud_path,
             )
         else:
             league = self.params["leagueID"]
@@ -130,7 +142,7 @@ class BaseHandler:
     ########## COMMON FETCHES ##########
     def fetch_leagues(self, max_entities: int = 100, save_json: bool = True):
         params = {"sportID": self.sport_id, "limit": max_entities}
-        self.league_data = self.make_get_request(
+        self.leagues_json = self.make_get_request(
             endpoint="leagues", params=params, save_json=save_json
         )
 
@@ -138,6 +150,47 @@ class BaseHandler:
         self, leagueID: str = "NFL", max_entities: int = 100, save_json: bool = True
     ) -> None:
         params = {"sportID": self.sport_id, "leagueID": leagueID, "limit": max_entities}
-        self.teams_data = self.make_get_request(
+        self.teams_json = self.make_get_request(
             endpoint="teams", params=params, save_json=save_json
         )
+
+    ########## COMMON PROCESSING ##########
+    def process_leagues(self, save_df: bool = True):
+        # Grab raw json data either from self if exists or else from gcloud
+        if not hasattr(self, "leagues_json"):
+            raise ValueError("You must run self.fetch_leagues before processing")
+
+        self.leagues_response = self._fit_response_to_pydantic(
+            self.leagues_json, LeagueResponse
+        )
+
+        self.leagues_data = self.leagues_response.to_leagues_dict()
+        self.leagues_df = pl.DataFrame(self.leagues_data)
+        self.leagues_data = pydantic_convert_and_validate(
+            self.leagues_df, LeaguesDataFrame
+        )
+
+        if save_df:
+            self._gcloud_save_dataframe("leagues", self.leagues_df)
+
+    ########## OTHER FUNCTIONS ##########
+
+    def _fit_response_to_pydantic(
+        self, json_response: dict[str, Any], pydantic_model: Type[BaseModel]
+    ) -> type[BaseModel]:
+        return pydantic_model(**json_response)
+
+    def _gcloud_save_dataframe(self, endpoint, data):
+        uploader = CloudHelper(project_id=self.GCLOUD_PROJECT_ID, obj=data)
+
+        # Grab the ID information
+        sport = self.params["sportID"]
+
+        if endpoint == "leagues":
+            season = calculate_nfl_season(self.start_date)
+
+            # Upload with the dynamic path
+            uploader.upload_to_cloud(
+                bucket_name=self.GCLOUD_PREFIX + f"-{sport.lower()}-data",
+                file_name=f"sport={sport}/endpoint={endpoint}/season={season}/leagues.parquet",
+            )

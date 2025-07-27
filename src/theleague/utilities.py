@@ -1,8 +1,10 @@
+import polars as pl
 import pandas as pd
 import numpy as np
 import datetime
 from datetime import datetime as dt
 from pydantic import BaseModel
+from typing import Type
 
 
 ########## SEASON CALCULATIONS ##########
@@ -17,17 +19,18 @@ def calculate_nfl_season(date: str | dt) -> int:
 
 
 ########## DATA ENFORCEMENT ##########
-def pydantic_convert_and_validate(df: pd.DataFrame, model: BaseModel) -> pd.DataFrame:
+def pydantic_convert_and_validate(
+    df: pl.DataFrame, model: Type[BaseModel]
+) -> pl.DataFrame:
     """
-    Cleans a Boxscore DataFrame by converting to a
-    given pydantic model, validating, and converting back.
+    Cleans a Polars DataFrame by converting to a
+    given Pydantic model, validating, and converting back.
     """
+    # Convert rows to dicts and validate
+    model_entries = [model.model_validate(row) for row in df.to_dicts()]
 
-    # Convert and validate
-    model_entries = [model.model_validate(row) for row in df.to_dict(orient="records")]
-
-    # Re-convert back to polars
-    clean_df = pd.DataFrame([entry.model_dump() for entry in model_entries])
+    # Dump the validated models back to dicts and create a clean DataFrame
+    clean_df = pl.DataFrame([entry.model_dump() for entry in model_entries])
 
     return clean_df
 

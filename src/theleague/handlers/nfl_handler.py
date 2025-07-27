@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import polars as pl
 
 from theleague.handlers.base_handler import BaseHandler
-from theleague.pydantic_models.leagues_model import LeagueResponse
+from theleague.pydantic_models.response_models.league_response import LeagueResponse
 
 
 class NFLHandler(BaseHandler):
@@ -37,17 +37,12 @@ class NFLHandler(BaseHandler):
         if not end_date:
             self.end_date = self.start_date
 
-    def fit_response_to_pydantic(
-        self, json_response: dict[str, Any], pydantic_model: Type[BaseModel]
-    ) -> type[BaseModel]:
-        return pydantic_model(**json_response)
-
 
 if __name__ == "__main__":
     handler = NFLHandler()
 
-    handler.fetch_leagues(max_entities=10)
-    handler.fetch_teams(max_entities=10)
+    handler.fetch_leagues(max_entities=2)
+    handler.process_leagues()
 
     handler.check_remaining_requests()
 
